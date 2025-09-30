@@ -16,7 +16,7 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Add CORS - Updated for HTTPS development
+// Add CORS - Updated for Azure deployment
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowWebApp", policy =>
@@ -25,41 +25,15 @@ builder.Services.AddCors(options =>
                 "http://localhost:8080", 
                 "https://localhost:7237", 
                 "https://localhost:8443",
-                "http://localhost:8081",  // Add your nginx container port
-                "null"  // Allow file:// protocol for development
+                "http://localhost:8081",
+                "null",
+                "https://azuredevopsbuildsapi-cdadgzh8cwesccgx.uksouth-01.azurewebsites.net"
               )
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials();
     });
 });
-
-// Configure Kestrel for development HTTPS
-if (builder.Environment.IsDevelopment())
-{
-    builder.WebHost.ConfigureKestrel(options =>
-    {
-        // HTTP port
-        options.ListenAnyIP(8080);
-        
-        // HTTPS port with certificate
-        options.ListenAnyIP(8443, listenOptions =>
-        {
-            var certPath = builder.Configuration["ASPNETCORE_Kestrel__Certificates__Default__Path"];
-            var certPassword = builder.Configuration["ASPNETCORE_Kestrel__Certificates__Default__Password"];
-            
-            if (!string.IsNullOrEmpty(certPath) && File.Exists(certPath))
-            {
-                listenOptions.UseHttps(certPath, certPassword);
-            }
-            else
-            {
-                // Fallback to development certificate
-                listenOptions.UseHttps();
-            }
-        });
-    });
-}
 
 // Register HTTP client and services
 builder.Services.AddHttpClient<IAzureDevOpsService, AzureDevOpsService>();
@@ -68,18 +42,24 @@ builder.Services.AddScoped<IAzureDevOpsService, AzureDevOpsService>();
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
-if (app.Environment.IsDevelopment())
+// Enable Swagger for all environments (you can restrict to Development later)
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Azure DevOps Reporter API v1");
-        c.RoutePrefix = string.Empty; // Set Swagger UI at the app's root
-    });
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Azure DevOps Reporter API v1");
+    c.RoutePrefix = string.Empty; // Set Swagger UI at the app's root
+});
 
-// Enable HTTPS redirection
-app.UseHttpsRedirection();
+// Add health check endpoint
+app.MapGet("/health", () => Results.Ok(new 
+{ 
+    status = "healthy", 
+    timestamp = DateTime.UtcNow,
+    version = "1.0.0",
+    environment = app.Environment.EnvironmentName
+}));
+
+// REMOVED: app.UseHttpsRedirection() - Azure handles HTTPS at load balancer level
 
 // Enable CORS
 app.UseCors("AllowWebApp");
@@ -87,4 +67,5 @@ app.UseCors("AllowWebApp");
 app.UseAuthorization();
 app.MapControllers();
 
+// Let Azure determine the port automatically
 app.Run();
