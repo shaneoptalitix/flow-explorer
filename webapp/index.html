@@ -3,124 +3,424 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Azure DevOps Environment Reports</title>
+    <title>Azure DevOps Deployments</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="css/styles.css">
+    <style>
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .accordion-content.active {
+            max-height: 2000px;
+            transition: max-height 0.5s ease-in;
+        }
+    </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
     <!-- Header -->
-    <header class="bg-white shadow-sm border-b border-gray-200">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center py-4">
+    <header class="bg-blue-600 shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="flex justify-between items-center">
                 <div class="flex items-center space-x-3">
-                    <i class="fab fa-microsoft text-azure text-2xl"></i>
-                    <h1 class="text-2xl font-bold text-gray-900">Azure DevOps Environment Reports</h1>
+                    <i class="fab fa-microsoft text-white text-3xl"></i>
+                    <h1 class="text-3xl font-bold text-white">Azure DevOps Deployments</h1>
                 </div>
-                <div class="flex items-center space-x-4">
-                    <span id="lastUpdated" class="text-sm text-gray-500"></span>
-                    <button onclick="loadReports()" class="bg-azure hover:bg-azure-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors">
-                        <i class="fas fa-sync-alt" id="refreshIcon"></i>
-                        <span>Refresh</span>
-                    </button>
-                </div>
+                <button onclick="loadDeployments()" class="bg-white text-blue-600 px-6 py-2 rounded-lg font-semibold hover:bg-blue-50 transition-colors flex items-center space-x-2">
+                    <i class="fas fa-sync-alt" id="refreshIcon"></i>
+                    <span>Refresh</span>
+                </button>
             </div>
         </div>
     </header>
 
-    <!-- Filters -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
-            <h2 class="text-lg font-semibold text-gray-900 mb-4">Filters</h2>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Filters Card -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Filters & Sorting</h2>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Environment Name</label>
-                    <input type="text" id="environmentFilter" placeholder="Filter by environment..." 
-                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-azure focus:border-transparent">
+                    <input type="text" id="environmentFilter" placeholder="Filter by name..." 
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Page Size</label>
-                    <select id="pageSizeFilter" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-azure focus:border-transparent">
-                        <option value="10" selected>10</option>
+                    <select id="pageSize" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="10">10</option>
                         <option value="25">25</option>
-                        <option value="50">50</option>
+                        <option value="50" selected>50</option>
                         <option value="100">100</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Include Variable Groups</label>
-                    <select id="includeVariableGroups" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-azure focus:border-transparent">
-                        <option value="false" selected>No</option>
-                        <option value="true">Yes</option>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+                    <select id="sortBy" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="deploymentFinishTime" selected>Deployment Date</option>
+                        <option value="buildStartTime">Build Date</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Sort Order</label>
+                    <select id="sortOrder" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="desc" selected>Newest First</option>
+                        <option value="asc">Oldest First</option>
                     </select>
                 </div>
             </div>
-            <div class="mt-4 flex space-x-4">
-                <button onclick="applyFilters()" class="bg-azure hover:bg-azure-dark text-white px-6 py-2 rounded-lg transition-colors">
+            <div class="mt-4">
+                <button onclick="loadDeployments()" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors">
                     Apply Filters
-                </button>
-                <button onclick="clearFilters()" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-lg transition-colors">
-                    Clear
                 </button>
             </div>
         </div>
 
         <!-- Stats -->
-        <div class="grid grid-cols-1 gap-6 mb-6">
-            <div class="bg-white rounded-lg shadow-sm p-6">
-                <div class="flex items-center">
-                    <div class="p-2 bg-blue-100 rounded-lg">
-                        <i class="fas fa-server text-blue-600"></i>
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="p-3 bg-blue-100 rounded-lg">
+                        <i class="fas fa-database text-blue-600 text-2xl"></i>
                     </div>
-                    <div class="ml-4">
-                        <p class="text-sm font-medium text-gray-500">Total Environments</p>
-                        <p class="text-2xl font-semibold text-gray-900" id="totalEnvironments">-</p>
+                    <div>
+                        <p class="text-sm text-gray-600">Total Deployments</p>
+                        <p class="text-2xl font-bold text-gray-800" id="totalCount">-</p>
                     </div>
                 </div>
+                <div class="text-sm text-gray-500" id="lastUpdated"></div>
             </div>
-        </div>
-
-        <!-- Pagination Controls -->
-        <div id="paginationContainer" class="mb-6">
-            <!-- Pagination will be loaded here -->
         </div>
 
         <!-- Loading State -->
         <div id="loadingState" class="hidden">
-            <div class="bg-white rounded-lg shadow-sm p-12 text-center">
-                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-azure mx-auto mb-4"></div>
-                <p class="text-gray-600">Loading environment reports...</p>
+            <div class="bg-white rounded-lg shadow-md p-12 text-center">
+                <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+                <p class="text-gray-600 text-lg">Loading deployments...</p>
             </div>
         </div>
 
         <!-- Error State -->
         <div id="errorState" class="hidden">
-            <div class="bg-red-50 border border-red-200 rounded-lg p-6">
-                <div class="flex">
-                    <i class="fas fa-exclamation-triangle text-red-500 mt-1"></i>
-                    <div class="ml-3">
-                        <h3 class="text-sm font-medium text-red-800">Error loading reports</h3>
-                        <p class="mt-1 text-sm text-red-700" id="errorMessage"></p>
-                        <div class="mt-4">
-                            <button onclick="loadReports()" class="bg-red-100 hover:bg-red-200 text-red-800 px-4 py-2 rounded-md text-sm transition-colors">
-                                Try Again
-                            </button>
-                        </div>
+            <div class="bg-red-50 border-l-4 border-red-500 rounded-lg p-6">
+                <div class="flex items-start">
+                    <i class="fas fa-exclamation-circle text-red-500 text-2xl mt-1"></i>
+                    <div class="ml-4">
+                        <h3 class="text-lg font-semibold text-red-800">Error</h3>
+                        <p class="text-red-700 mt-1" id="errorMessage"></p>
+                        <button onclick="loadDeployments()" class="mt-4 bg-red-100 text-red-800 px-4 py-2 rounded-lg hover:bg-red-200 transition-colors">
+                            Try Again
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Environment Reports -->
-        <div id="reportsContainer" class="space-y-6">
-            <!-- Reports will be loaded here -->
+        <!-- Deployments List -->
+        <div id="deploymentsContainer" class="space-y-4">
+            <!-- Deployments will be loaded here -->
+        </div>
+
+        <!-- Pagination -->
+        <div id="paginationContainer" class="mt-6">
+            <!-- Pagination will be loaded here -->
         </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="js/config.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/app.js"></script>
+    <script>
+        // Configuration - Update these values
+        const API_BASE_URL = 'https://localhost:8443';
+        const ORGANIZATION_NAME = 'OptalitixLimited';
+        const PROJECT_NAME = 'Flow';
+
+        let currentPage = 1;
+        let totalPages = 1;
+
+        // Format date
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            return date.toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        // Toggle accordion
+        function toggleAccordion(id) {
+            const content = document.getElementById(`accordion-${id}`);
+            const icon = document.getElementById(`icon-${id}`);
+            
+            if (content.classList.contains('active')) {
+                content.classList.remove('active');
+                icon.classList.remove('fa-chevron-up');
+                icon.classList.add('fa-chevron-down');
+            } else {
+                content.classList.add('active');
+                icon.classList.remove('fa-chevron-down');
+                icon.classList.add('fa-chevron-up');
+            }
+        }
+
+        // Create deployment item
+        function createDeploymentItem(deployment) {
+            const loadBalancerDomain = deployment.variableGroupVariables?.['LoadBalancer.Domain'];
+            
+            // Create environment name (with link if LoadBalancer.Domain exists)
+            let envNameHtml;
+            if (loadBalancerDomain && loadBalancerDomain !== '[HIDDEN]') {
+                envNameHtml = `<a href="https://${escapeHtml(loadBalancerDomain)}" target="_blank" rel="noopener noreferrer" 
+                    class="text-blue-600 hover:text-blue-800 font-semibold flex items-center">
+                    ${escapeHtml(deployment.environmentName)}
+                    <i class="fas fa-external-link-alt ml-2 text-sm"></i>
+                </a>`;
+            } else {
+                envNameHtml = `<span class="font-semibold text-gray-800">${escapeHtml(deployment.environmentName)}</span>`;
+            }
+
+            // Create build number link
+            const buildNumberHtml = deployment.buildId && deployment.buildNumber
+                ? `<a href="https://dev.azure.com/${escapeHtml(ORGANIZATION_NAME)}/${escapeHtml(PROJECT_NAME)}/_build/results?buildId=${deployment.buildId}&view=results" 
+                    target="_blank" rel="noopener noreferrer" 
+                    class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
+                    ${escapeHtml(deployment.buildNumber)}
+                    <i class="fas fa-external-link-alt ml-2 text-xs"></i>
+                </a>`
+                : `<span class="font-mono text-sm text-gray-600">${escapeHtml(deployment.buildNumber || 'N/A')}</span>`;
+
+            // Create source version link
+            const sourceVersionHtml = deployment.buildSourceVersion
+                ? `<a href="https://bitbucket.org/Optalitix/optalitix.framework/commits/${escapeHtml(deployment.buildSourceVersion)}" 
+                    target="_blank" rel="noopener noreferrer" 
+                    class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
+                    ${escapeHtml(deployment.buildSourceVersion)}
+                    <i class="fas fa-external-link-alt ml-2 text-xs"></i>
+                </a>`
+                : `<span class="font-mono text-sm text-gray-600">N/A</span>`;
+
+            // Check for Elsa.Enabled variable
+            const elsaEnabled = deployment.variableGroupVariables?.['Elsa.Enabled'];
+            const elsaBadge = elsaEnabled
+                ? `<span class="ml-3 px-2 py-1 text-xs font-semibold rounded ${elsaEnabled.toLowerCase() === 'true' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
+                    Elsa: ${escapeHtml(elsaEnabled)}
+                   </span>`
+                : '';
+
+            // Create variables HTML
+            let variablesHtml = '<p class="text-gray-500 italic">No variables available</p>';
+            if (deployment.variableGroupVariables && Object.keys(deployment.variableGroupVariables).length > 0) {
+                variablesHtml = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">';
+                for (const [key, value] of Object.entries(deployment.variableGroupVariables)) {
+                    const isSecret = value === '[HIDDEN]';
+                    variablesHtml += `
+                        <div class="p-3 rounded-lg ${isSecret ? 'bg-red-50 border border-red-200' : 'bg-blue-50 border border-blue-200'}">
+                            <div class="text-xs font-semibold text-gray-600 uppercase mb-1">${escapeHtml(key)}</div>
+                            <div class="text-sm font-mono ${isSecret ? 'text-red-700' : 'text-gray-800'} break-all">${escapeHtml(value)}</div>
+                        </div>
+                    `;
+                }
+                variablesHtml += '</div>';
+            }
+
+            return `
+                <div class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow">
+                    <div class="p-6">
+                        <!-- Header Grid -->
+                        <div class="grid grid-cols-1 md:grid-cols-6 gap-4 mb-4">
+                            <div class="md:col-span-2">
+                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Environment</p>
+                                ${envNameHtml}
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Number</p>
+                                ${buildNumberHtml}
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch</p>
+                                <span class="font-mono text-sm text-gray-800">${escapeHtml(deployment.buildSourceBranch || 'N/A')}</span>
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Deployment Date</p>
+                                <span class="text-sm text-gray-700">${formatDate(deployment.deploymentRecordFinishTime)}</span>
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Date</p>
+                                <span class="text-sm text-gray-700">${formatDate(deployment.buildStartTime)}</span>
+                            </div>
+                        </div>
+
+                        <!-- Source Version -->
+                        <div class="mb-4 pb-4 border-b border-gray-200">
+                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
+                            <div class="flex items-center">
+                                ${sourceVersionHtml}
+                                ${elsaBadge}
+                            </div>
+                        </div>
+
+                        <!-- Accordion Toggle -->
+                        <button onclick="toggleAccordion(${deployment.environmentId})" 
+                                class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors">
+                            <span class="font-medium text-gray-700 flex items-center">
+                                <i class="fas fa-cog mr-2 text-blue-600"></i>
+                                Variables ${deployment.variableGroupName ? `(${escapeHtml(deployment.variableGroupName)})` : ''}
+                            </span>
+                            <i class="fas fa-chevron-down text-gray-500" id="icon-${deployment.environmentId}"></i>
+                        </button>
+
+                        <!-- Accordion Content -->
+                        <div id="accordion-${deployment.environmentId}" class="accordion-content mt-4">
+                            ${variablesHtml}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Create pagination
+        function createPagination(data) {
+            if (data.totalPages <= 1) return '';
+
+            let html = `
+                <div class="bg-white rounded-lg shadow-md p-4 flex items-center justify-between">
+                    <div class="text-sm text-gray-600">
+                        Page ${data.pageNumber} of ${data.totalPages} (${data.totalCount} total)
+                    </div>
+                    <div class="flex space-x-2">
+            `;
+
+            // Previous button
+            html += `
+                <button onclick="loadPage(${data.pageNumber - 1})" 
+                        ${!data.hasPreviousPage ? 'disabled' : ''} 
+                        class="px-4 py-2 rounded-lg border ${data.hasPreviousPage ? 'border-gray-300 bg-white hover:bg-gray-50 text-gray-700' : 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'}">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+            `;
+
+            // Page numbers
+            const startPage = Math.max(1, data.pageNumber - 2);
+            const endPage = Math.min(data.totalPages, data.pageNumber + 2);
+
+            for (let i = startPage; i <= endPage; i++) {
+                const isActive = i === data.pageNumber;
+                html += `
+                    <button onclick="loadPage(${i})" 
+                            class="px-4 py-2 rounded-lg ${isActive ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'}">
+                        ${i}
+                    </button>
+                `;
+            }
+
+            // Next button
+            html += `
+                <button onclick="loadPage(${data.pageNumber + 1})" 
+                        ${!data.hasNextPage ? 'disabled' : ''} 
+                        class="px-4 py-2 rounded-lg border ${data.hasNextPage ? 'border-gray-300 bg-white hover:bg-gray-50 text-gray-700' : 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'}">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            `;
+
+            html += `
+                    </div>
+                </div>
+            `;
+
+            return html;
+        }
+
+        // Load deployments
+        async function loadDeployments() {
+            const environmentFilter = document.getElementById('environmentFilter').value;
+            const pageSize = document.getElementById('pageSize').value;
+            const sortBy = document.getElementById('sortBy').value;
+            const sortOrder = document.getElementById('sortOrder').value;
+
+            // Show loading
+            document.getElementById('loadingState').classList.remove('hidden');
+            document.getElementById('errorState').classList.add('hidden');
+            document.getElementById('deploymentsContainer').innerHTML = '';
+            document.getElementById('refreshIcon').classList.add('animate-spin');
+
+            try {
+                // Build URL with parameters
+                const params = new URLSearchParams({
+                    pageNumber: currentPage,
+                    pageSize: pageSize,
+                    includeVariableGroups: true,
+                    sortBy: sortBy,
+                    sortOrder: sortOrder
+                });
+
+                if (environmentFilter) {
+                    params.append('environmentName', environmentFilter);
+                }
+
+                const url = `${API_BASE_URL}/api/EnvironmentReport?${params.toString()}`;
+                const response = await fetch(url);
+
+                if (!response.ok) {
+                    throw new Error(`API returned ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                // Update stats
+                document.getElementById('totalCount').textContent = data.totalCount;
+                document.getElementById('lastUpdated').textContent = `Updated: ${formatDate(new Date())}`;
+
+                // Update totals
+                totalPages = data.totalPages;
+
+                // Display deployments
+                if (data.data && data.data.length > 0) {
+                    document.getElementById('deploymentsContainer').innerHTML = 
+                        data.data.map(d => createDeploymentItem(d)).join('');
+                } else {
+                    document.getElementById('deploymentsContainer').innerHTML = `
+                        <div class="bg-white rounded-lg shadow-md p-12 text-center">
+                            <i class="fas fa-inbox text-gray-400 text-5xl mb-4"></i>
+                            <h3 class="text-xl font-semibold text-gray-800 mb-2">No deployments found</h3>
+                            <p class="text-gray-600">Try adjusting your filters</p>
+                        </div>
+                    `;
+                }
+
+                // Display pagination
+                document.getElementById('paginationContainer').innerHTML = createPagination(data);
+
+            } catch (error) {
+                document.getElementById('errorState').classList.remove('hidden');
+                document.getElementById('errorMessage').textContent = error.message;
+            } finally {
+                document.getElementById('loadingState').classList.add('hidden');
+                document.getElementById('refreshIcon').classList.remove('animate-spin');
+            }
+        }
+
+        // Load specific page
+        function loadPage(page) {
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            loadDeployments();
+        }
+
+        // Load on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            // Load initial data
+            loadDeployments();
+        });
+    </script>
 </body>
 </html>
