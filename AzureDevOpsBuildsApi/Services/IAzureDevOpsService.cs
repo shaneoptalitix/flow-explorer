@@ -9,6 +9,8 @@ public interface IAzureDevOpsService
         string? stageNameFilter = null,
         string? resultFilter = null,
         int pageNumber = 1,
-        int pageSize = 10,
-        bool includeVariableGroups = true);
+        int pageSize = 40,
+        bool includeVariableGroups = true,
+        string sortBy = "deploymentFinishTime",
+        string sortOrder = "desc");
 }

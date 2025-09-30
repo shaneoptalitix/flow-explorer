@@ -38,8 +38,10 @@ public class AzureDevOpsService : IAzureDevOpsService
         string? stageNameFilter = null,
         string? resultFilter = null,
         int pageNumber = 1,
-        int pageSize = 10,
-        bool includeVariableGroups = true)
+        int pageSize = 40,
+        bool includeVariableGroups = true,
+        string sortBy = "deploymentFinishTime",
+        string sortOrder = "desc")
     {
         var reports = new List<EnvironmentReport>();
 
@@ -49,8 +51,10 @@ public class AzureDevOpsService : IAzureDevOpsService
             pageNumber = Math.Max(1, pageNumber);
             pageSize = Math.Max(1, Math.Min(100, pageSize)); // Limit max page size to 100
 
-            _logger.LogInformation("Starting to fetch environment reports - Page: {PageNumber}, PageSize: {PageSize}, IncludeVariableGroups: {IncludeVariableGroups}", 
-                pageNumber, pageSize, includeVariableGroups);
+            _logger.LogInformation(
+                "Starting to fetch environment reports - Page: {PageNumber}, PageSize: {PageSize}, " +
+                "IncludeVariableGroups: {IncludeVariableGroups}, SortBy: {SortBy}, SortOrder: {SortOrder}", 
+                pageNumber, pageSize, includeVariableGroups, sortBy, sortOrder);
             
             // Get environments and optionally variable groups in parallel
             var environmentsTask = GetEnvironmentsAsync();
@@ -200,8 +204,8 @@ public class AzureDevOpsService : IAzureDevOpsService
                 }
             }
 
-            // Sort by finish time (descending - most recent first)
-            reports = reports.OrderByDescending(r => r.DeploymentRecordFinishTime).ToList();
+            // Apply sorting based on parameters
+            reports = ApplySorting(reports, sortBy, sortOrder);
             
             var totalCount = reports.Count;
             var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
@@ -230,6 +234,24 @@ public class AzureDevOpsService : IAzureDevOpsService
             _logger.LogError(ex, "Error occurred while fetching environment reports");
             throw;
         }
+    }
+
+    private List<EnvironmentReport> ApplySorting(List<EnvironmentReport> reports, string sortBy, string sortOrder)
+    {
+        var isAscending = sortOrder.Equals("asc", StringComparison.OrdinalIgnoreCase);
+        
+        return sortBy.ToLowerInvariant() switch
+        {
+            "deploymentfinishtime" => isAscending 
+                ? reports.OrderBy(r => r.DeploymentRecordFinishTime ?? DateTime.MinValue).ToList()
+                : reports.OrderByDescending(r => r.DeploymentRecordFinishTime ?? DateTime.MinValue).ToList(),
+            
+            "buildstarttime" => isAscending
+                ? reports.OrderBy(r => r.BuildStartTime ?? DateTime.MinValue).ToList()
+                : reports.OrderByDescending(r => r.BuildStartTime ?? DateTime.MinValue).ToList(),
+            
+            _ => reports.OrderByDescending(r => r.DeploymentRecordFinishTime ?? DateTime.MinValue).ToList()
+        };
     }
 
     private async Task<List<Models.Environment>> GetEnvironmentsAsync()
