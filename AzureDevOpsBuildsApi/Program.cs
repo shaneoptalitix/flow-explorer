@@ -41,13 +41,17 @@ builder.Services.AddScoped<IAzureDevOpsService, AzureDevOpsService>();
 
 var app = builder.Build();
 
+// Serve static files (HTML, CSS, JS) from wwwroot
+app.UseDefaultFiles(); // Serves index.html by default
+app.UseStaticFiles();   // Serves all files from wwwroot folder
+
 // Configure the HTTP request pipeline
-// Enable Swagger for all environments (you can restrict to Development later)
+// Swagger is now at /swagger instead of root
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Azure DevOps Reporter API v1");
-    c.RoutePrefix = string.Empty; // Set Swagger UI at the app's root
+    c.RoutePrefix = "swagger"; // Swagger UI at /swagger, not root
 });
 
 // Add health check endpoint
@@ -58,8 +62,6 @@ app.MapGet("/health", () => Results.Ok(new
     version = "1.0.0",
     environment = app.Environment.EnvironmentName
 }));
-
-// REMOVED: app.UseHttpsRedirection() - Azure handles HTTPS at load balancer level
 
 // Enable CORS
 app.UseCors("AllowWebApp");
