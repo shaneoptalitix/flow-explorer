@@ -211,14 +211,21 @@
                 : `<span class="font-mono text-sm text-gray-600">${escapeHtml(deployment.buildNumber || 'N/A')}</span>`;
 
             // Show first 7 characters of source version
-            const sourceVersionHtml = deployment.buildSourceVersion
-                ? `<a href="https://bitbucket.org/Optalitix/optalitix.framework/commits/${escapeHtml(deployment.buildSourceVersion)}" 
-                    target="_blank" rel="noopener noreferrer" 
-                    class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
-                    ${escapeHtml(deployment.buildSourceVersion.substring(0, 7))}
-                    <i class="fas fa-external-link-alt ml-2 text-xs"></i>
-                </a>`
-                : `<span class="font-mono text-sm text-gray-600">N/A</span>`;
+            let sourceVersionHtml;
+            if (deployment.buildSourceVersion) {
+                sourceVersionHtml = `
+                    <a href="https://bitbucket.org/Optalitix/optalitix.framework/commits/${escapeHtml(deployment.buildSourceVersion)}" 
+                        target="_blank" rel="noopener noreferrer" 
+                        class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
+                        ${escapeHtml(deployment.buildSourceVersion.substring(0, 7))}
+                        <i class="fas fa-external-link-alt ml-2 text-xs"></i>
+                    </a>`;
+                if (deployment.buildTriggerMessage) {
+                    sourceVersionHtml += `<div class="text-sm text-gray-600 mt-1">${escapeHtml(deployment.buildTriggerMessage)}</div>`;
+                }
+            } else {
+                sourceVersionHtml = `<span class="font-mono text-sm text-gray-600">N/A</span>`;
+            }
 
             return `
                 <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
@@ -275,14 +282,21 @@
                 : `<span class="font-mono text-sm text-gray-600">${escapeHtml(deployment.buildNumber || 'N/A')}</span>`;
 
             // Create source version link (show first 7 characters)
-            const sourceVersionHtml = deployment.buildSourceVersion
-                ? `<a href="https://bitbucket.org/Optalitix/optalitix.framework/commits/${escapeHtml(deployment.buildSourceVersion)}" 
-                    target="_blank" rel="noopener noreferrer" 
-                    class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
-                    ${escapeHtml(deployment.buildSourceVersion.substring(0, 7))}
-                    <i class="fas fa-external-link-alt ml-2 text-xs"></i>
-                </a>`
-                : `<span class="font-mono text-sm text-gray-600">N/A</span>`;
+            let sourceVersionHtml;
+            if (deployment.buildSourceVersion) {
+                sourceVersionHtml = `
+                    <a href="https://bitbucket.org/Optalitix/optalitix.framework/commits/${escapeHtml(deployment.buildSourceVersion)}" 
+                        target="_blank" rel="noopener noreferrer" 
+                        class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
+                        ${escapeHtml(deployment.buildSourceVersion.substring(0, 7))}
+                        <i class="fas fa-external-link-alt ml-2 text-xs"></i>
+                    </a>`;
+                if (deployment.buildTriggerMessage) {
+                    sourceVersionHtml += `<div class="text-sm text-gray-600 mt-1">${escapeHtml(deployment.buildTriggerMessage)}</div>`;
+                }
+            } else {
+                sourceVersionHtml = `<span class="font-mono text-sm text-gray-600">N/A</span>`;
+            }
 
             // Create variables HTML
             let variablesHtml = '<p class="text-gray-500 italic">No variables available</p>';
