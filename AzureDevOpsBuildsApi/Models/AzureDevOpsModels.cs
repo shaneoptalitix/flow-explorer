@@ -166,6 +166,7 @@ public class EnvironmentReport
     public string VariableGroupName { get; set; } = string.Empty;
     public Dictionary<string, string> VariableGroupVariables { get; set; } = new();
     public string? PortalUrl { get; set; } = null;
+    public List<EnvironmentReport> HistoricalDeployments { get; set; } = new();
 }
 
 // Paged response model

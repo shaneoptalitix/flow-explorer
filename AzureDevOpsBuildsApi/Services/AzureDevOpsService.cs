@@ -47,16 +47,14 @@ public class AzureDevOpsService : IAzureDevOpsService
 
         try
         {
-            // Validate paging parameters
             pageNumber = Math.Max(1, pageNumber);
-            pageSize = Math.Max(1, Math.Min(100, pageSize)); // Limit max page size to 100
+            pageSize = Math.Max(1, Math.Min(100, pageSize));
 
             _logger.LogInformation(
                 "Starting to fetch environment reports - Page: {PageNumber}, PageSize: {PageSize}, " +
                 "IncludeVariableGroups: {IncludeVariableGroups}, SortBy: {SortBy}, SortOrder: {SortOrder}", 
                 pageNumber, pageSize, includeVariableGroups, sortBy, sortOrder);
             
-            // Get environments and optionally variable groups in parallel
             var environmentsTask = GetEnvironmentsAsync();
             Task<List<VariableGroup>>? variableGroupsTask = null;
             
@@ -78,7 +76,6 @@ public class AzureDevOpsService : IAzureDevOpsService
             _logger.LogInformation($"Found {environments.Count} environments" + 
                 (includeVariableGroups ? $" and {variableGroups.Count} variable groups" : ""));
 
-            // Apply environment name filter
             if (!string.IsNullOrEmpty(environmentNameFilter))
             {
                 environments = environments.Where(e => 
@@ -90,7 +87,6 @@ public class AzureDevOpsService : IAzureDevOpsService
             {
                 _logger.LogInformation($"Processing environment: {environment.Name} (ID: {environment.Id})");
                 
-                // Find matching variable group by name (only if includeVariableGroups is true)
                 VariableGroup? matchingVariableGroup = null;
                 if (includeVariableGroups)
                 {
@@ -101,130 +97,64 @@ public class AzureDevOpsService : IAzureDevOpsService
                     {
                         _logger.LogInformation($"Found matching variable group: {matchingVariableGroup.Name} (ID: {matchingVariableGroup.Id}) for environment {environment.Name}");
                     }
-                    else
-                    {
-                        _logger.LogWarning($"No matching variable group found for environment: {environment.Name}");
-                    }
                 }
                 
-                // Get deployment records for this environment
                 var deploymentRecords = await GetEnvironmentDeploymentRecordsAsync(environment.Id);
                 _logger.LogInformation($"Found {deploymentRecords.Count} deployment records for environment {environment.Name}");
 
-                // Apply stage name filter
                 if (!string.IsNullOrEmpty(stageNameFilter))
                 {
                     deploymentRecords = deploymentRecords.Where(dr =>
                         dr.StageName.Contains(stageNameFilter, StringComparison.OrdinalIgnoreCase)).ToList();
-                    _logger.LogInformation($"Filtered stage name {deploymentRecords.Count} deployment records for environment {environment.Name}");
                 }
 
-                // Apply result filter
                 if (!string.IsNullOrEmpty(resultFilter))
                 {
                     deploymentRecords = deploymentRecords.Where(dr =>
                         dr.Result.Equals(resultFilter, StringComparison.OrdinalIgnoreCase)).ToList();
-                    _logger.LogInformation($"Filtered result {deploymentRecords.Count} deployment records for environment {environment.Name}");                        
                 }
 
-                foreach (var deploymentRecord in deploymentRecords.OrderByDescending(dr => dr.FinishTime).Take(1))
+                // Get the latest deployment
+                var latestDeployment = deploymentRecords.OrderByDescending(dr => dr.FinishTime).FirstOrDefault();
+                
+                if (latestDeployment != null)
                 {
-                    try
-                    {
-                        // Get build details using owner.id as buildId
-                        var build = await GetBuildAsync(deploymentRecord.Owner.Id);
-                        
-                        // Prepare variable dictionary
-                        var variableDict = includeVariableGroups && matchingVariableGroup?.Variables != null 
-                            ? matchingVariableGroup.Variables.ToDictionary(
-                                kvp => kvp.Key,
-                                kvp => kvp.Value.IsSecret ? "[HIDDEN]" : kvp.Value.Value
-                            ) 
-                            : new Dictionary<string, string>();
-                        
-                        // Calculate PortalUrl
-                        var portalUrl = CalculatePortalUrl(environment.Name, matchingVariableGroup);
-                        
-                        var report = new EnvironmentReport
-                        {
-                            EnvironmentId = environment.Id,
-                            EnvironmentName = environment.Name,
-                            EnvironmentLastModifiedBy = environment.LastModifiedBy.UniqueName,
-                            EnvironmentLastModifiedOn = environment.LastModifiedOn,
-                            DeploymentRecordId = deploymentRecord.Id,
-                            DeploymentRecordEnvironmentId = deploymentRecord.EnvironmentId,
-                            DeploymentRecordStageName = deploymentRecord.StageName,
-                            DeploymentRecordDefinitionId = deploymentRecord.Definition.Id,
-                            DeploymentRecordDefinitionName = deploymentRecord.Definition.Name,
-                            DeploymentRecordOwnerId = deploymentRecord.Owner.Id,
-                            DeploymentRecordOwnerName = deploymentRecord.Owner.Name,
-                            DeploymentRecordResult = deploymentRecord.Result,
-                            DeploymentRecordFinishTime = deploymentRecord.FinishTime,
-                            BuildId = build?.Id ?? 0,
-                            BuildNumber = build?.BuildNumber ?? string.Empty,
-                            BuildStatus = build?.Status ?? string.Empty,
-                            BuildStartTime = build?.StartTime,
-                            BuildSourceBranch = build?.SourceBranch ?? string.Empty,
-                            BuildSourceVersion = build?.SourceVersion ?? string.Empty,
-                            BuildTriggerMessage = build?.TriggerInfo?.Message ?? string.Empty,
-                            BuildTriggerRepository = build?.TriggerInfo?.TriggerRepository ?? string.Empty,
-                            VariableGroupId = matchingVariableGroup?.Id ?? 0,
-                            VariableGroupName = matchingVariableGroup?.Name ?? string.Empty,
-                            VariableGroupVariables = variableDict,
-                            PortalUrl = portalUrl
-                        };
+                    // Get historical deployments (last 3 successful before the latest)
+                    var historicalDeployments = deploymentRecords
+                        .Where(dr => dr.Result.Equals("succeeded", StringComparison.OrdinalIgnoreCase))
+                        .Where(dr => dr.FinishTime < latestDeployment.FinishTime)
+                        .OrderByDescending(dr => dr.FinishTime)
+                        .Take(3)
+                        .ToList();
+                    
+                    _logger.LogInformation($"Found {historicalDeployments.Count} historical deployments for environment {environment.Name}");
 
-                        reports.Add(report);
-                    }
-                    catch (Exception ex)
+                    var report = await CreateEnvironmentReport(
+                        environment, 
+                        latestDeployment, 
+                        matchingVariableGroup, 
+                        includeVariableGroups);
+                    
+                    // Add historical deployments
+                    foreach (var histDep in historicalDeployments)
                     {
-                        _logger.LogWarning($"Failed to get build details for deployment record {deploymentRecord.Id}: {ex.Message}");
-                        
-                        // Prepare variable dictionary
-                        var variableDict = includeVariableGroups && matchingVariableGroup?.Variables != null 
-                            ? matchingVariableGroup.Variables.ToDictionary(
-                                kvp => kvp.Key,
-                                kvp => kvp.Value.IsSecret ? "[HIDDEN]" : kvp.Value.Value
-                            ) 
-                            : new Dictionary<string, string>();
-                        
-                        // Calculate PortalUrl
-                        var portalUrl = CalculatePortalUrl(environment.Name, matchingVariableGroup);
-                        
-                        // Still add the report without build details
-                        var report = new EnvironmentReport
-                        {
-                            EnvironmentId = environment.Id,
-                            EnvironmentName = environment.Name,
-                            EnvironmentLastModifiedBy = environment.LastModifiedBy.UniqueName,
-                            EnvironmentLastModifiedOn = environment.LastModifiedOn,
-                            DeploymentRecordId = deploymentRecord.Id,
-                            DeploymentRecordEnvironmentId = deploymentRecord.EnvironmentId,
-                            DeploymentRecordStageName = deploymentRecord.StageName,
-                            DeploymentRecordDefinitionId = deploymentRecord.Definition.Id,
-                            DeploymentRecordDefinitionName = deploymentRecord.Definition.Name,
-                            DeploymentRecordOwnerId = deploymentRecord.Owner.Id,
-                            DeploymentRecordOwnerName = deploymentRecord.Owner.Name,
-                            DeploymentRecordResult = deploymentRecord.Result,
-                            DeploymentRecordFinishTime = deploymentRecord.FinishTime,
-                            VariableGroupId = matchingVariableGroup?.Id ?? 0,
-                            VariableGroupName = matchingVariableGroup?.Name ?? string.Empty,
-                            VariableGroupVariables = variableDict,
-                            PortalUrl = portalUrl
-                        };
-
-                        reports.Add(report);
+                        var histReport = await CreateEnvironmentReport(
+                            environment, 
+                            histDep, 
+                            matchingVariableGroup, 
+                            includeVariableGroups);
+                        report.HistoricalDeployments.Add(histReport);
                     }
+                    
+                    reports.Add(report);
                 }
             }
 
-            // Apply sorting based on parameters
             reports = ApplySorting(reports, sortBy, sortOrder);
             
             var totalCount = reports.Count;
             var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
             
-            // Apply paging
             var pagedReports = reports
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
@@ -250,6 +180,92 @@ public class AzureDevOpsService : IAzureDevOpsService
         }
     }
 
+    private async Task<EnvironmentReport> CreateEnvironmentReport(
+        Models.Environment environment,
+        EnvironmentDeploymentRecord deploymentRecord,
+        VariableGroup? matchingVariableGroup,
+        bool includeVariableGroups)
+    {
+        try
+        {
+            var build = await GetBuildAsync(deploymentRecord.Owner.Id);
+            
+            var variableDict = includeVariableGroups && matchingVariableGroup?.Variables != null 
+                ? matchingVariableGroup.Variables.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value.IsSecret ? "[HIDDEN]" : kvp.Value.Value
+                ) 
+                : new Dictionary<string, string>();
+            
+            var portalUrl = CalculatePortalUrl(environment.Name, matchingVariableGroup);
+            
+            return new EnvironmentReport
+            {
+                EnvironmentId = environment.Id,
+                EnvironmentName = environment.Name,
+                EnvironmentLastModifiedBy = environment.LastModifiedBy.UniqueName,
+                EnvironmentLastModifiedOn = environment.LastModifiedOn,
+                DeploymentRecordId = deploymentRecord.Id,
+                DeploymentRecordEnvironmentId = deploymentRecord.EnvironmentId,
+                DeploymentRecordStageName = deploymentRecord.StageName,
+                DeploymentRecordDefinitionId = deploymentRecord.Definition.Id,
+                DeploymentRecordDefinitionName = deploymentRecord.Definition.Name,
+                DeploymentRecordOwnerId = deploymentRecord.Owner.Id,
+                DeploymentRecordOwnerName = deploymentRecord.Owner.Name,
+                DeploymentRecordResult = deploymentRecord.Result,
+                DeploymentRecordFinishTime = deploymentRecord.FinishTime,
+                BuildId = build?.Id ?? 0,
+                BuildNumber = build?.BuildNumber ?? string.Empty,
+                BuildStatus = build?.Status ?? string.Empty,
+                BuildStartTime = build?.StartTime,
+                BuildSourceBranch = build?.SourceBranch ?? string.Empty,
+                BuildSourceVersion = build?.SourceVersion ?? string.Empty,
+                BuildTriggerMessage = build?.TriggerInfo?.Message ?? string.Empty,
+                BuildTriggerRepository = build?.TriggerInfo?.TriggerRepository ?? string.Empty,
+                VariableGroupId = matchingVariableGroup?.Id ?? 0,
+                VariableGroupName = matchingVariableGroup?.Name ?? string.Empty,
+                VariableGroupVariables = variableDict,
+                PortalUrl = portalUrl,
+                HistoricalDeployments = new List<EnvironmentReport>()
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning($"Failed to get build details for deployment record {deploymentRecord.Id}: {ex.Message}");
+            
+            var variableDict = includeVariableGroups && matchingVariableGroup?.Variables != null 
+                ? matchingVariableGroup.Variables.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value.IsSecret ? "[HIDDEN]" : kvp.Value.Value
+                ) 
+                : new Dictionary<string, string>();
+            
+            var portalUrl = CalculatePortalUrl(environment.Name, matchingVariableGroup);
+            
+            return new EnvironmentReport
+            {
+                EnvironmentId = environment.Id,
+                EnvironmentName = environment.Name,
+                EnvironmentLastModifiedBy = environment.LastModifiedBy.UniqueName,
+                EnvironmentLastModifiedOn = environment.LastModifiedOn,
+                DeploymentRecordId = deploymentRecord.Id,
+                DeploymentRecordEnvironmentId = deploymentRecord.EnvironmentId,
+                DeploymentRecordStageName = deploymentRecord.StageName,
+                DeploymentRecordDefinitionId = deploymentRecord.Definition.Id,
+                DeploymentRecordDefinitionName = deploymentRecord.Definition.Name,
+                DeploymentRecordOwnerId = deploymentRecord.Owner.Id,
+                DeploymentRecordOwnerName = deploymentRecord.Owner.Name,
+                DeploymentRecordResult = deploymentRecord.Result,
+                DeploymentRecordFinishTime = deploymentRecord.FinishTime,
+                VariableGroupId = matchingVariableGroup?.Id ?? 0,
+                VariableGroupName = matchingVariableGroup?.Name ?? string.Empty,
+                VariableGroupVariables = variableDict,
+                PortalUrl = portalUrl,
+                HistoricalDeployments = new List<EnvironmentReport>()
+            };
+        }
+    }
+
     private string? CalculatePortalUrl(string environmentName, VariableGroup? variableGroup)
     {
         if (variableGroup?.Variables == null)
@@ -259,7 +275,6 @@ public class AzureDevOpsService : IAzureDevOpsService
 
         var variables = variableGroup.Variables;
         
-        // Helper to get non-secret variable value
         string? GetVariableValue(string key)
         {
             if (variables.TryGetValue(key, out var variable) && !variable.IsSecret)
@@ -274,13 +289,11 @@ public class AzureDevOpsService : IAzureDevOpsService
         var kubernetesHostname = GetVariableValue("Kubernetes.HttpRoute.Hostname");
         var tenantName = GetVariableValue("Tenant.Name")?.ToLowerInvariant();
 
-        // Check if Elsa.Enabled exists and is true
         var isElsaEnabled = !string.IsNullOrEmpty(elsaEnabledStr) && 
                            elsaEnabledStr.Equals("true", StringComparison.OrdinalIgnoreCase);
 
         if (!isElsaEnabled)
         {
-            // Condition 1: Elsa.Enabled doesn't exist or = false
             if (!string.IsNullOrEmpty(loadBalancerDomain))
             {
                 return $"https://{loadBalancerDomain}";
@@ -288,16 +301,12 @@ public class AzureDevOpsService : IAzureDevOpsService
         }
         else
         {
-            // Condition 2: Elsa.Enabled = true
             if (!string.IsNullOrEmpty(kubernetesHostname))
             {
-                // Has Kubernetes.HttpRoute.Hostname
                 return $"https://{kubernetesHostname}";
             }
             else if (!string.IsNullOrEmpty(tenantName))
             {
-                // No Kubernetes.HttpRoute.Hostname, build URL from Tenant.Name
-                // Determine {env} from environment name
                 var envNameLower = environmentName.ToLowerInvariant();
                 string env;
                 
@@ -311,7 +320,6 @@ public class AzureDevOpsService : IAzureDevOpsService
                 }
                 else
                 {
-                    // Default fallback
                     env = "dev";
                 }
                 

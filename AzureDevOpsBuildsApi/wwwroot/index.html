@@ -16,6 +16,15 @@
             max-height: 2000px;
             transition: max-height 0.5s ease-in;
         }
+        .historical-accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .historical-accordion-content.active {
+            max-height: 3000px;
+            transition: max-height 0.5s ease-in;
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -174,6 +183,71 @@
             }
         }
 
+        // Toggle historical deployments accordion
+        function toggleHistoricalAccordion(id) {
+            const content = document.getElementById(`historical-accordion-${id}`);
+            const icon = document.getElementById(`historical-icon-${id}`);
+            
+            if (content.classList.contains('active')) {
+                content.classList.remove('active');
+                icon.classList.remove('fa-chevron-up');
+                icon.classList.add('fa-chevron-down');
+            } else {
+                content.classList.add('active');
+                icon.classList.remove('fa-chevron-down');
+                icon.classList.add('fa-chevron-up');
+            }
+        }
+
+        // Create historical deployment item (compact version)
+        function createHistoricalDeploymentItem(deployment) {
+            const buildNumberHtml = deployment.buildId && deployment.buildNumber
+                ? `<a href="https://dev.azure.com/${escapeHtml(ORGANIZATION_NAME)}/${escapeHtml(PROJECT_NAME)}/_build/results?buildId=${deployment.buildId}&view=results" 
+                    target="_blank" rel="noopener noreferrer" 
+                    class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
+                    ${escapeHtml(deployment.buildNumber)}
+                    <i class="fas fa-external-link-alt ml-2 text-xs"></i>
+                </a>`
+                : `<span class="font-mono text-sm text-gray-600">${escapeHtml(deployment.buildNumber || 'N/A')}</span>`;
+
+            // Show first 7 characters of source version
+            const sourceVersionHtml = deployment.buildSourceVersion
+                ? `<a href="https://bitbucket.org/Optalitix/optalitix.framework/commits/${escapeHtml(deployment.buildSourceVersion)}" 
+                    target="_blank" rel="noopener noreferrer" 
+                    class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
+                    ${escapeHtml(deployment.buildSourceVersion.substring(0, 7))}
+                    <i class="fas fa-external-link-alt ml-2 text-xs"></i>
+                </a>`
+                : `<span class="font-mono text-sm text-gray-600">N/A</span>`;
+
+            return `
+                <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+                        <div>
+                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Number</p>
+                            ${buildNumberHtml}
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch</p>
+                            <span class="font-mono text-sm text-gray-800">${escapeHtml(deployment.buildSourceBranch || 'N/A')}</span>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
+                            ${sourceVersionHtml}
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Deployment Date</p>
+                            <span class="text-sm text-gray-700">${formatDate(deployment.deploymentRecordFinishTime)}</span>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Date</p>
+                            <span class="text-sm text-gray-700">${formatDate(deployment.buildStartTime)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         // Create deployment item
         function createDeploymentItem(deployment) {
             const loadBalancerDomain = deployment.variableGroupVariables?.['LoadBalancer.Domain'];
@@ -200,12 +274,12 @@
                 </a>`
                 : `<span class="font-mono text-sm text-gray-600">${escapeHtml(deployment.buildNumber || 'N/A')}</span>`;
 
-            // Create source version link
+            // Create source version link (show first 7 characters)
             const sourceVersionHtml = deployment.buildSourceVersion
                 ? `<a href="https://bitbucket.org/Optalitix/optalitix.framework/commits/${escapeHtml(deployment.buildSourceVersion)}" 
                     target="_blank" rel="noopener noreferrer" 
                     class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
-                    ${escapeHtml(deployment.buildSourceVersion)}
+                    ${escapeHtml(deployment.buildSourceVersion.substring(0, 7))}
                     <i class="fas fa-external-link-alt ml-2 text-xs"></i>
                 </a>`
                 : `<span class="font-mono text-sm text-gray-600">N/A</span>`;
@@ -232,6 +306,28 @@
                     `;
                 }
                 variablesHtml += '</div>';
+            }
+
+            // Create historical deployments HTML
+            let historicalHtml = '';
+            if (deployment.historicalDeployments && deployment.historicalDeployments.length > 0) {
+                historicalHtml = `
+                    <div class="mt-4">
+                        <button onclick="toggleHistoricalAccordion(${deployment.environmentId})" 
+                                class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors">
+                            <span class="font-medium text-gray-700 flex items-center">
+                                <i class="fas fa-history mr-2 text-purple-600"></i>
+                                Historical Deployments (${deployment.historicalDeployments.length})
+                            </span>
+                            <i class="fas fa-chevron-down text-gray-500" id="historical-icon-${deployment.environmentId}"></i>
+                        </button>
+                        <div id="historical-accordion-${deployment.environmentId}" class="historical-accordion-content mt-4">
+                            <div class="space-y-3">
+                                ${deployment.historicalDeployments.map(histDep => createHistoricalDeploymentItem(histDep)).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
             }
 
             return `
@@ -284,6 +380,9 @@
                         <div id="accordion-${deployment.environmentId}" class="accordion-content mt-4">
                             ${variablesHtml}
                         </div>
+
+                        <!-- Historical Deployments -->
+                        ${historicalHtml}
                     </div>
                 </div>
             `;
