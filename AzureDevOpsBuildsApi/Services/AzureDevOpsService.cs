@@ -134,6 +134,17 @@ public class AzureDevOpsService : IAzureDevOpsService
                         // Get build details using owner.id as buildId
                         var build = await GetBuildAsync(deploymentRecord.Owner.Id);
                         
+                        // Prepare variable dictionary
+                        var variableDict = includeVariableGroups && matchingVariableGroup?.Variables != null 
+                            ? matchingVariableGroup.Variables.ToDictionary(
+                                kvp => kvp.Key,
+                                kvp => kvp.Value.IsSecret ? "[HIDDEN]" : kvp.Value.Value
+                            ) 
+                            : new Dictionary<string, string>();
+                        
+                        // Calculate PortalUrl
+                        var portalUrl = CalculatePortalUrl(environment.Name, matchingVariableGroup);
+                        
                         var report = new EnvironmentReport
                         {
                             EnvironmentId = environment.Id,
@@ -159,12 +170,8 @@ public class AzureDevOpsService : IAzureDevOpsService
                             BuildTriggerRepository = build?.TriggerInfo?.TriggerRepository ?? string.Empty,
                             VariableGroupId = matchingVariableGroup?.Id ?? 0,
                             VariableGroupName = matchingVariableGroup?.Name ?? string.Empty,
-                            VariableGroupVariables = includeVariableGroups && matchingVariableGroup?.Variables != null 
-                                ? matchingVariableGroup.Variables.ToDictionary(
-                                    kvp => kvp.Key,
-                                    kvp => kvp.Value.IsSecret ? "[HIDDEN]" : kvp.Value.Value
-                                ) 
-                                : new Dictionary<string, string>()
+                            VariableGroupVariables = variableDict,
+                            PortalUrl = portalUrl
                         };
 
                         reports.Add(report);
@@ -172,6 +179,17 @@ public class AzureDevOpsService : IAzureDevOpsService
                     catch (Exception ex)
                     {
                         _logger.LogWarning($"Failed to get build details for deployment record {deploymentRecord.Id}: {ex.Message}");
+                        
+                        // Prepare variable dictionary
+                        var variableDict = includeVariableGroups && matchingVariableGroup?.Variables != null 
+                            ? matchingVariableGroup.Variables.ToDictionary(
+                                kvp => kvp.Key,
+                                kvp => kvp.Value.IsSecret ? "[HIDDEN]" : kvp.Value.Value
+                            ) 
+                            : new Dictionary<string, string>();
+                        
+                        // Calculate PortalUrl
+                        var portalUrl = CalculatePortalUrl(environment.Name, matchingVariableGroup);
                         
                         // Still add the report without build details
                         var report = new EnvironmentReport
@@ -191,12 +209,8 @@ public class AzureDevOpsService : IAzureDevOpsService
                             DeploymentRecordFinishTime = deploymentRecord.FinishTime,
                             VariableGroupId = matchingVariableGroup?.Id ?? 0,
                             VariableGroupName = matchingVariableGroup?.Name ?? string.Empty,
-                            VariableGroupVariables = includeVariableGroups && matchingVariableGroup?.Variables != null 
-                                ? matchingVariableGroup.Variables.ToDictionary(
-                                    kvp => kvp.Key,
-                                    kvp => kvp.Value.IsSecret ? "[HIDDEN]" : kvp.Value.Value
-                                ) 
-                                : new Dictionary<string, string>()
+                            VariableGroupVariables = variableDict,
+                            PortalUrl = portalUrl
                         };
 
                         reports.Add(report);
@@ -234,6 +248,78 @@ public class AzureDevOpsService : IAzureDevOpsService
             _logger.LogError(ex, "Error occurred while fetching environment reports");
             throw;
         }
+    }
+
+    private string? CalculatePortalUrl(string environmentName, VariableGroup? variableGroup)
+    {
+        if (variableGroup?.Variables == null)
+        {
+            return null;
+        }
+
+        var variables = variableGroup.Variables;
+        
+        // Helper to get non-secret variable value
+        string? GetVariableValue(string key)
+        {
+            if (variables.TryGetValue(key, out var variable) && !variable.IsSecret)
+            {
+                return variable.Value;
+            }
+            return null;
+        }
+
+        var loadBalancerDomain = GetVariableValue("LoadBalancer.Domain");
+        var elsaEnabledStr = GetVariableValue("Elsa.Enabled");
+        var kubernetesHostname = GetVariableValue("Kubernetes.HttpRoute.Hostname");
+        var tenantName = GetVariableValue("Tenant.Name")?.ToLowerInvariant();
+
+        // Check if Elsa.Enabled exists and is true
+        var isElsaEnabled = !string.IsNullOrEmpty(elsaEnabledStr) && 
+                           elsaEnabledStr.Equals("true", StringComparison.OrdinalIgnoreCase);
+
+        if (!isElsaEnabled)
+        {
+            // Condition 1: Elsa.Enabled doesn't exist or = false
+            if (!string.IsNullOrEmpty(loadBalancerDomain))
+            {
+                return $"https://{loadBalancerDomain}";
+            }
+        }
+        else
+        {
+            // Condition 2: Elsa.Enabled = true
+            if (!string.IsNullOrEmpty(kubernetesHostname))
+            {
+                // Has Kubernetes.HttpRoute.Hostname
+                return $"https://{kubernetesHostname}";
+            }
+            else if (!string.IsNullOrEmpty(tenantName))
+            {
+                // No Kubernetes.HttpRoute.Hostname, build URL from Tenant.Name
+                // Determine {env} from environment name
+                var envNameLower = environmentName.ToLowerInvariant();
+                string env;
+                
+                if (envNameLower.Contains("uat"))
+                {
+                    env = "uat";
+                }
+                else if (envNameLower.Contains("qa"))
+                {
+                    env = "dev";
+                }
+                else
+                {
+                    // Default fallback
+                    env = "dev";
+                }
+                
+                return $"https://{tenantName}-{env}.flow.optalitix.net/{tenantName}/login";
+            }
+        }
+
+        return null;
     }
 
     private List<EnvironmentReport> ApplySorting(List<EnvironmentReport> reports, string sortBy, string sortOrder)

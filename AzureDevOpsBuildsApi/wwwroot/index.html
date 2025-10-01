@@ -178,10 +178,10 @@
         function createDeploymentItem(deployment) {
             const loadBalancerDomain = deployment.variableGroupVariables?.['LoadBalancer.Domain'];
             
-            // Create environment name (with link if LoadBalancer.Domain exists)
+            // Create environment name (with link if PortalUrl exists)
             let envNameHtml;
-            if (loadBalancerDomain && loadBalancerDomain !== '[HIDDEN]') {
-                envNameHtml = `<a href="https://${escapeHtml(loadBalancerDomain)}" target="_blank" rel="noopener noreferrer" 
+            if (deployment.portalUrl) {
+                envNameHtml = `<a href="${escapeHtml(deployment.portalUrl)}" target="_blank" rel="noopener noreferrer" 
                     class="text-blue-600 hover:text-blue-800 font-semibold flex items-center">
                     ${escapeHtml(deployment.environmentName)}
                     <i class="fas fa-external-link-alt ml-2 text-sm"></i>
