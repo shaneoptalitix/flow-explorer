@@ -308,20 +308,20 @@
                 variablesHtml += '</div>';
             }
 
-            // Create historical deployments HTML
+            // Create historical deployments HTML - DEFAULT TO EXPANDED
             let historicalHtml = '';
             if (deployment.historicalDeployments && deployment.historicalDeployments.length > 0) {
                 historicalHtml = `
-                    <div class="mt-4">
+                    <div class="mb-4 pb-4 border-b border-gray-200">
                         <button onclick="toggleHistoricalAccordion(${deployment.environmentId})" 
                                 class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors">
                             <span class="font-medium text-gray-700 flex items-center">
                                 <i class="fas fa-history mr-2 text-purple-600"></i>
                                 Historical Deployments (${deployment.historicalDeployments.length})
                             </span>
-                            <i class="fas fa-chevron-down text-gray-500" id="historical-icon-${deployment.environmentId}"></i>
+                            <i class="fas fa-chevron-up text-gray-500" id="historical-icon-${deployment.environmentId}"></i>
                         </button>
-                        <div id="historical-accordion-${deployment.environmentId}" class="historical-accordion-content mt-4">
+                        <div id="historical-accordion-${deployment.environmentId}" class="historical-accordion-content active mt-4">
                             <div class="space-y-3">
                                 ${deployment.historicalDeployments.map(histDep => createHistoricalDeploymentItem(histDep)).join('')}
                             </div>
@@ -366,7 +366,10 @@
                             </div>
                         </div>
 
-                        <!-- Accordion Toggle -->
+                        <!-- Historical Deployments (MOVED ABOVE VARIABLES) -->
+                        ${historicalHtml}
+
+                        <!-- Variables Accordion Toggle -->
                         <button onclick="toggleAccordion(${deployment.environmentId})" 
                                 class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors">
                             <span class="font-medium text-gray-700 flex items-center">
@@ -376,13 +379,10 @@
                             <i class="fas fa-chevron-down text-gray-500" id="icon-${deployment.environmentId}"></i>
                         </button>
 
-                        <!-- Accordion Content -->
+                        <!-- Variables Accordion Content -->
                         <div id="accordion-${deployment.environmentId}" class="accordion-content mt-4">
                             ${variablesHtml}
                         </div>
-
-                        <!-- Historical Deployments -->
-                        ${historicalHtml}
                     </div>
                 </div>
             `;

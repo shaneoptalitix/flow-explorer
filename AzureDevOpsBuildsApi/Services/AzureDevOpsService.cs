@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.Json;
 using AzureDevOpsReporter.Configuration;
 using AzureDevOpsReporter.Models;
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace AzureDevOpsReporter.Services;
 
@@ -11,16 +11,31 @@ public class AzureDevOpsService : IAzureDevOpsService
     private readonly HttpClient _httpClient;
     private readonly AzureDevOpsConfig _config;
     private readonly ILogger<AzureDevOpsService> _logger;
+    private readonly IMemoryCache _cache;
+    
+    // Cache keys
+    private const string ENVIRONMENTS_CACHE_KEY = "environments";
+    private const string VARIABLE_GROUPS_CACHE_KEY = "variablegroups";
+    private const string DEPLOYMENT_RECORDS_CACHE_KEY_PREFIX = "deployments_env_";
+    private const string BUILD_CACHE_KEY_PREFIX = "build_";
+    
+    // Cache durations
+    private static readonly TimeSpan EnvironmentsCacheDuration = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan VariableGroupsCacheDuration = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan DeploymentRecordsCacheDuration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan BuildCacheDuration = TimeSpan.FromMinutes(30);
 
     public AzureDevOpsService(
         HttpClient httpClient, 
         IConfiguration configuration,
-        ILogger<AzureDevOpsService> logger)
+        ILogger<AzureDevOpsService> logger,
+        IMemoryCache cache)
     {
         _httpClient = httpClient;
         _config = configuration.GetSection("AzureDevOps").Get<AzureDevOpsConfig>() 
                  ?? throw new InvalidOperationException("AzureDevOps configuration is missing");
         _logger = logger;
+        _cache = cache;
         
         ConfigureHttpClient();
     }
@@ -114,12 +129,10 @@ public class AzureDevOpsService : IAzureDevOpsService
                         dr.Result.Equals(resultFilter, StringComparison.OrdinalIgnoreCase)).ToList();
                 }
 
-                // Get the latest deployment
                 var latestDeployment = deploymentRecords.OrderByDescending(dr => dr.FinishTime).FirstOrDefault();
                 
                 if (latestDeployment != null)
                 {
-                    // Get historical deployments (last 3 successful before the latest)
                     var historicalDeployments = deploymentRecords
                         .Where(dr => dr.Result.Equals("succeeded", StringComparison.OrdinalIgnoreCase))
                         .Where(dr => dr.FinishTime < latestDeployment.FinishTime)
@@ -135,7 +148,6 @@ public class AzureDevOpsService : IAzureDevOpsService
                         matchingVariableGroup, 
                         includeVariableGroups);
                     
-                    // Add historical deployments
                     foreach (var histDep in historicalDeployments)
                     {
                         var histReport = await CreateEnvironmentReport(
@@ -350,40 +362,72 @@ public class AzureDevOpsService : IAzureDevOpsService
 
     private async Task<List<Models.Environment>> GetEnvironmentsAsync()
     {
-        var url = $"_apis/distributedtask/environments?api-version={_config.ApiVersion}";
-        var response = await _httpClient.GetStringAsync(url);
-        var environmentsResponse = JsonSerializer.Deserialize<EnvironmentsResponse>(response);
-        return environmentsResponse?.Value ?? new List<Models.Environment>();
+        return await _cache.GetOrCreateAsync(ENVIRONMENTS_CACHE_KEY, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = EnvironmentsCacheDuration;
+            entry.Size = 10; // Relative size for cache management
+            _logger.LogInformation("Cache miss - fetching environments from Azure DevOps");
+            
+            var url = $"_apis/distributedtask/environments?api-version={_config.ApiVersion}";
+            var response = await _httpClient.GetStringAsync(url);
+            var environmentsResponse = JsonSerializer.Deserialize<EnvironmentsResponse>(response);
+            return environmentsResponse?.Value ?? new List<Models.Environment>();
+        }) ?? new List<Models.Environment>();
     }
 
     private async Task<List<EnvironmentDeploymentRecord>> GetEnvironmentDeploymentRecordsAsync(int environmentId)
     {
-        var url = $"_apis/distributedtask/environments/{environmentId}/environmentdeploymentrecords?api-version={_config.ApiVersion}";
-        var response = await _httpClient.GetStringAsync(url);
-        var deploymentRecordsResponse = JsonSerializer.Deserialize<EnvironmentDeploymentRecordsResponse>(response);
-        return deploymentRecordsResponse?.Value ?? new List<EnvironmentDeploymentRecord>();
+        var cacheKey = $"{DEPLOYMENT_RECORDS_CACHE_KEY_PREFIX}{environmentId}";
+        
+        return await _cache.GetOrCreateAsync(cacheKey, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = DeploymentRecordsCacheDuration;
+            entry.Size = 5; // Smaller relative size
+            _logger.LogInformation("Cache miss - fetching deployment records for environment {EnvironmentId}", environmentId);
+            
+            var url = $"_apis/distributedtask/environments/{environmentId}/environmentdeploymentrecords?api-version={_config.ApiVersion}";
+            var response = await _httpClient.GetStringAsync(url);
+            var deploymentRecordsResponse = JsonSerializer.Deserialize<EnvironmentDeploymentRecordsResponse>(response);
+            return deploymentRecordsResponse?.Value ?? new List<EnvironmentDeploymentRecord>();
+        }) ?? new List<EnvironmentDeploymentRecord>();
     }
 
     private async Task<List<VariableGroup>> GetVariableGroupsAsync()
     {
-        var url = $"_apis/distributedtask/variablegroups?api-version={_config.ApiVersion}";
-        var response = await _httpClient.GetStringAsync(url);
-        var variableGroupsResponse = JsonSerializer.Deserialize<VariableGroupsResponse>(response);
-        return variableGroupsResponse?.Value ?? new List<VariableGroup>();
+        return await _cache.GetOrCreateAsync(VARIABLE_GROUPS_CACHE_KEY, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = VariableGroupsCacheDuration;
+            entry.Size = 15; // Larger relative size for variable groups
+            _logger.LogInformation("Cache miss - fetching variable groups from Azure DevOps");
+            
+            var url = $"_apis/distributedtask/variablegroups?api-version={_config.ApiVersion}";
+            var response = await _httpClient.GetStringAsync(url);
+            var variableGroupsResponse = JsonSerializer.Deserialize<VariableGroupsResponse>(response);
+            return variableGroupsResponse?.Value ?? new List<VariableGroup>();
+        }) ?? new List<VariableGroup>();
     }
 
     private async Task<Build?> GetBuildAsync(int buildId)
     {
-        try
+        var cacheKey = $"{BUILD_CACHE_KEY_PREFIX}{buildId}";
+        
+        return await _cache.GetOrCreateAsync(cacheKey, async entry =>
         {
-            var url = $"_apis/build/builds/{buildId}?api-version={_config.ApiVersion}";
-            var response = await _httpClient.GetStringAsync(url);
-            return JsonSerializer.Deserialize<Build>(response);
-        }
-        catch (HttpRequestException ex) when (ex.Message.Contains("404"))
-        {
-            _logger.LogWarning($"Build with ID {buildId} not found");
-            return null;
-        }
+            entry.AbsoluteExpirationRelativeToNow = BuildCacheDuration;
+            entry.Size = 1; // Small size for individual builds
+            
+            try
+            {
+                _logger.LogInformation("Cache miss - fetching build {BuildId} from Azure DevOps", buildId);
+                var url = $"_apis/build/builds/{buildId}?api-version={_config.ApiVersion}";
+                var response = await _httpClient.GetStringAsync(url);
+                return JsonSerializer.Deserialize<Build>(response);
+            }
+            catch (HttpRequestException ex) when (ex.Message.Contains("404"))
+            {
+                _logger.LogWarning($"Build with ID {buildId} not found");
+                return null;
+            }
+        });
     }
 }

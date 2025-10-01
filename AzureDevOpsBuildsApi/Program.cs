@@ -16,7 +16,13 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Add CORS - Updated for Azure deployment
+// Add Memory Cache with size limit
+builder.Services.AddMemoryCache(options =>
+{
+    options.SizeLimit = 1024; // Total size units allowed in cache
+});
+
+// Add CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowWebApp", policy =>
@@ -42,16 +48,15 @@ builder.Services.AddScoped<IAzureDevOpsService, AzureDevOpsService>();
 var app = builder.Build();
 
 // Serve static files (HTML, CSS, JS) from wwwroot
-app.UseDefaultFiles(); // Serves index.html by default
-app.UseStaticFiles();   // Serves all files from wwwroot folder
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 // Configure the HTTP request pipeline
-// Swagger is now at /swagger instead of root
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Azure DevOps Reporter API v1");
-    c.RoutePrefix = "swagger"; // Swagger UI at /swagger, not root
+    c.RoutePrefix = "swagger";
 });
 
 // Add health check endpoint
@@ -63,11 +68,19 @@ app.MapGet("/health", () => Results.Ok(new
     environment = app.Environment.EnvironmentName
 }));
 
-// Enable CORS
-app.UseCors("AllowWebApp");
+// Add cache clear endpoint (useful for development/testing)
+app.MapPost("/api/cache/clear", (Microsoft.Extensions.Caching.Memory.IMemoryCache cache) =>
+{
+    if (cache is Microsoft.Extensions.Caching.Memory.MemoryCache memCache)
+    {
+        memCache.Compact(1.0); // Remove 100% of cache entries
+        return Results.Ok(new { message = "Cache cleared successfully" });
+    }
+    return Results.Problem("Unable to clear cache");
+});
 
+app.UseCors("AllowWebApp");
 app.UseAuthorization();
 app.MapControllers();
 
-// Let Azure determine the port automatically
 app.Run();
