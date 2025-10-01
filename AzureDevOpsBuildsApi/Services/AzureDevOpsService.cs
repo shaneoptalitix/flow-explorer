@@ -297,47 +297,48 @@ public class AzureDevOpsService : IAzureDevOpsService
         }
 
         var loadBalancerDomain = GetVariableValue("LoadBalancer.Domain");
-        var elsaEnabledStr = GetVariableValue("Elsa.Enabled");
         var kubernetesHostname = GetVariableValue("Kubernetes.HttpRoute.Hostname");
         var tenantName = GetVariableValue("Tenant.Name")?.ToLowerInvariant();
+        var serviceInfoPortalUrl = GetVariableValue("ServiceInfo.PortalUrl")?.ToLowerInvariant();
 
-        var isElsaEnabled = !string.IsNullOrEmpty(elsaEnabledStr) && 
-                           elsaEnabledStr.Equals("true", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(kubernetesHostname))
+        {
+            return $"https://{kubernetesHostname}";
+        }
+        else if (!string.IsNullOrEmpty(serviceInfoPortalUrl))
+        {
+            return serviceInfoPortalUrl;
+        }
+        
+        var envNameLower = environmentName.ToLowerInvariant();
+        string? env = null;
+        if (envNameLower.Contains("uat"))
+        {
+            env = "uat";
+        }
+        else if (envNameLower.Contains("qa"))
+        {
+            env = "qa";
+        }
+        else if (envNameLower.Contains("staging"))
+        {
+            env = "staging";
+        }        
 
-        if (!isElsaEnabled)
+        if (string.IsNullOrEmpty(tenantName))
         {
-            if (!string.IsNullOrEmpty(loadBalancerDomain))
-            {
-                return $"https://{loadBalancerDomain}";
-            }
+            tenantName = envNameLower.StartsWith("originate") ? "originate" : "quote";
         }
-        else
+
+        if (!string.IsNullOrEmpty(env))
         {
-            if (!string.IsNullOrEmpty(kubernetesHostname))
-            {
-                return $"https://{kubernetesHostname}";
-            }
-            else if (!string.IsNullOrEmpty(tenantName))
-            {
-                var envNameLower = environmentName.ToLowerInvariant();
-                string env;
-                
-                if (envNameLower.Contains("uat"))
-                {
-                    env = "uat";
-                }
-                else if (envNameLower.Contains("qa"))
-                {
-                    env = "dev";
-                }
-                else
-                {
-                    env = "dev";
-                }
-                
-                return $"https://{tenantName}-{env}.flow.optalitix.net/{tenantName}/login";
-            }
+            return $"https://{tenantName}-{env}.flow.optalitix.net/{tenantName}/login";
         }
+
+        if (!string.IsNullOrEmpty(loadBalancerDomain))
+        {
+            return $"https://{loadBalancerDomain}";
+        }        
 
         return null;
     }

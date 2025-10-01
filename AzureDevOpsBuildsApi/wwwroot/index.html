@@ -284,31 +284,48 @@
                 </a>`
                 : `<span class="font-mono text-sm text-gray-600">N/A</span>`;
 
-            // Check for Elsa.Enabled variable
-            const elsaEnabled = deployment.variableGroupVariables?.['Elsa.Enabled'];
-            const elsaBadge = elsaEnabled
-                ? `<span class="ml-3 px-2 py-1 text-xs font-semibold rounded ${elsaEnabled.toLowerCase() === 'true' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
-                    Elsa: ${escapeHtml(elsaEnabled)}
-                   </span>`
-                : '';
-
             // Create variables HTML
             let variablesHtml = '<p class="text-gray-500 italic">No variables available</p>';
             if (deployment.variableGroupVariables && Object.keys(deployment.variableGroupVariables).length > 0) {
                 variablesHtml = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">';
                 for (const [key, value] of Object.entries(deployment.variableGroupVariables)) {
                     const isSecret = value === '[HIDDEN]';
+                    
+                    // Special handling for specific variables - make them links
+                    let valueHtml;
+                    if (key === 'LoadBalancer.Domain' && !isSecret && value) {
+                        valueHtml = `<a href="https://${escapeHtml(value)}" target="_blank" rel="noopener noreferrer" 
+                            class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center break-all">
+                            ${escapeHtml(value)}
+                            <i class="fas fa-external-link-alt ml-2 text-xs flex-shrink-0"></i>
+                        </a>`;
+                    } else if (key === 'ServiceInfo.PortalUrl' && !isSecret && value) {
+                        valueHtml = `<a href="${escapeHtml(value)}" target="_blank" rel="noopener noreferrer" 
+                            class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center break-all">
+                            ${escapeHtml(value)}
+                            <i class="fas fa-external-link-alt ml-2 text-xs flex-shrink-0"></i>
+                        </a>`;
+                    } else if (key === 'Kubernetes.HttpRoute.Hostname' && !isSecret && value) {
+                        valueHtml = `<a href="https://${escapeHtml(value)}" target="_blank" rel="noopener noreferrer" 
+                            class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center break-all">
+                            ${escapeHtml(value)}
+                            <i class="fas fa-external-link-alt ml-2 text-xs flex-shrink-0"></i>
+                        </a>`;
+                    } else {
+                        valueHtml = `<div class="text-sm font-mono ${isSecret ? 'text-red-700' : 'text-gray-800'} break-all">${escapeHtml(value)}</div>`;
+                    }
+                    
                     variablesHtml += `
                         <div class="p-3 rounded-lg ${isSecret ? 'bg-red-50 border border-red-200' : 'bg-blue-50 border border-blue-200'}">
                             <div class="text-xs font-semibold text-gray-600 uppercase mb-1">${escapeHtml(key)}</div>
-                            <div class="text-sm font-mono ${isSecret ? 'text-red-700' : 'text-gray-800'} break-all">${escapeHtml(value)}</div>
+                            ${valueHtml}
                         </div>
                     `;
                 }
                 variablesHtml += '</div>';
             }
 
-            // Create historical deployments HTML - DEFAULT TO EXPANDED
+            // Create historical deployments HTML - DEFAULT TO COLLAPSED
             let historicalHtml = '';
             if (deployment.historicalDeployments && deployment.historicalDeployments.length > 0) {
                 historicalHtml = `
@@ -319,9 +336,9 @@
                                 <i class="fas fa-history mr-2 text-purple-600"></i>
                                 Historical Deployments (${deployment.historicalDeployments.length})
                             </span>
-                            <i class="fas fa-chevron-up text-gray-500" id="historical-icon-${deployment.environmentId}"></i>
+                            <i class="fas fa-chevron-down text-gray-500" id="historical-icon-${deployment.environmentId}"></i>
                         </button>
-                        <div id="historical-accordion-${deployment.environmentId}" class="historical-accordion-content active mt-4">
+                        <div id="historical-accordion-${deployment.environmentId}" class="historical-accordion-content mt-4">
                             <div class="space-y-3">
                                 ${deployment.historicalDeployments.map(histDep => createHistoricalDeploymentItem(histDep)).join('')}
                             </div>
@@ -360,13 +377,10 @@
                         <!-- Source Version -->
                         <div class="mb-4 pb-4 border-b border-gray-200">
                             <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
-                            <div class="flex items-center">
-                                ${sourceVersionHtml}
-                                ${elsaBadge}
-                            </div>
+                            ${sourceVersionHtml}
                         </div>
 
-                        <!-- Historical Deployments (MOVED ABOVE VARIABLES) -->
+                        <!-- Historical Deployments (COLLAPSED BY DEFAULT) -->
                         ${historicalHtml}
 
                         <!-- Variables Accordion Toggle -->
