@@ -10,7 +10,7 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "Azure DevOps Environment Reporter API",
+        Title = "Flow Environments & Deployments Explorer API",
         Version = "v1",
         Description = "API for querying Azure DevOps environments, deployments, and builds"
     });
@@ -55,7 +55,7 @@ app.UseStaticFiles();
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Azure DevOps Reporter API v1");
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Flow Environments & Deployments Explorer API v1");
     c.RoutePrefix = "swagger";
 });
 
@@ -69,14 +69,11 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 
 // Add cache clear endpoint (useful for development/testing)
-app.MapPost("/api/cache/clear", (Microsoft.Extensions.Caching.Memory.IMemoryCache cache) =>
+app.MapPost("/api/cache/clear", (IAzureDevOpsService azureDevOpsService) =>
 {
-    if (cache is Microsoft.Extensions.Caching.Memory.MemoryCache memCache)
-    {
-        memCache.Compact(1.0); // Remove 100% of cache entries
-        return Results.Ok(new { message = "Cache cleared successfully" });
-    }
-    return Results.Problem("Unable to clear cache");
+    return azureDevOpsService.ClearCache()
+        ? Results.Ok(new { message = "Cache cleared successfully" }) 
+        : Results.Problem("Unable to clear cache");    
 });
 
 app.UseCors("AllowWebApp");

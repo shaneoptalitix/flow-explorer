@@ -13,4 +13,12 @@ public interface IAzureDevOpsService
         bool includeVariableGroups = true,
         string sortBy = "deploymentFinishTime",
         string sortOrder = "desc");
+
+    Task<List<PipelineBranchInfo>> GetPipelineBranchesAsync(
+        int definitionId,
+        int top = 300,
+        string sortBy = "latestBuildFinishTime",
+        string sortOrder = "desc");
+
+    bool ClearCache();
 }

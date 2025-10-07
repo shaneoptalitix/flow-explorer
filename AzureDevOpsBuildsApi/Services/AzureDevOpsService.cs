@@ -18,12 +18,14 @@ public class AzureDevOpsService : IAzureDevOpsService
     private const string VARIABLE_GROUPS_CACHE_KEY = "variablegroups";
     private const string DEPLOYMENT_RECORDS_CACHE_KEY_PREFIX = "deployments_env_";
     private const string BUILD_CACHE_KEY_PREFIX = "build_";
+    private const string PIPELINE_BRANCHES_CACHE_KEY_PREFIX = "pipeline_branches_";
     
     // Cache durations
     private static readonly TimeSpan EnvironmentsCacheDuration = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan VariableGroupsCacheDuration = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan DeploymentRecordsCacheDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan BuildCacheDuration = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan PipelineBranchesCacheDuration = TimeSpan.FromMinutes(5);
 
     public AzureDevOpsService(
         HttpClient httpClient, 
@@ -46,6 +48,111 @@ public class AzureDevOpsService : IAzureDevOpsService
         _httpClient.DefaultRequestHeaders.Authorization = 
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", authToken);
         _httpClient.BaseAddress = new Uri($"https://dev.azure.com/{_config.Organization}/{_config.Project}/");
+    }
+    
+    public bool ClearCache()
+    {
+        if (_cache is MemoryCache memCache)
+        {
+            memCache.Compact(1.0); // Remove 100% of cache entries
+            return true;
+        }
+        return false;
+    }
+
+    public async Task<List<PipelineBranchInfo>> GetPipelineBranchesAsync(
+        int definitionId,
+        int top = 300,
+        string sortBy = "latestBuildFinishTime",
+        string sortOrder = "desc")
+    {
+        var cacheKey = $"{PIPELINE_BRANCHES_CACHE_KEY_PREFIX}{definitionId}_{sortBy}_{sortOrder}";
+
+        return await _cache.GetOrCreateAsync(cacheKey, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = PipelineBranchesCacheDuration;
+            entry.Size = 5;
+
+            _logger.LogInformation(
+                "Fetching builds for pipeline definition {DefinitionId} with filters - SortBy: {SortBy}, SortOrder: {SortOrder}",
+                definitionId, sortBy, sortOrder);
+
+            try
+            {
+                // Get recent builds for this definition (last 200 builds to ensure we get all branches)
+                var url = $"_apis/build/builds?definitions={definitionId}&top={top}&maxBuildsPerDefinition={top}&api-version={_config.ApiVersion}&queryOrder=finishTimeDescending&statusFilter=completed";
+                var response = await _httpClient.GetStringAsync(url);
+                var buildsResponse = JsonSerializer.Deserialize<BuildsResponse>(response);
+                var builds = buildsResponse?.Value ?? new List<Build>();
+
+                _logger.LogInformation("Found {Count} builds for pipeline definition {DefinitionId}", builds.Count, definitionId);
+
+                // Group by branch and get the latest build for each
+                var branchGroups = builds
+                    .GroupBy(b => b.SourceBranch)
+                    .Select(g =>
+                    {
+                        var latestBuild = g.OrderByDescending(b => b.FinishTime ?? DateTime.MinValue).First();
+
+                        return new PipelineBranchInfo
+                        {
+                            BranchName = g.Key,
+                            TotalBuilds = g.Count(),
+                            LatestBuildId = latestBuild.Id,
+                            LatestBuildNumber = latestBuild.BuildNumber,
+                            LatestBuildStatus = latestBuild.Status,
+                            LatestBuildResult = latestBuild.Result,
+                            LatestBuildStartTime = latestBuild.StartTime,
+                            LatestBuildFinishTime = latestBuild.FinishTime,
+                            LatestBuildSourceVersion = latestBuild.SourceVersion
+                        };
+                    })
+                    .ToList();
+
+                _logger.LogInformation("Found {Count} total branches for pipeline definition {DefinitionId}", branchGroups.Count, definitionId);
+
+                // Apply sorting
+                branchGroups = ApplyBranchSorting(branchGroups, sortBy, sortOrder);
+
+                _logger.LogInformation("Returning {Count} branches for pipeline definition {DefinitionId}", branchGroups.Count, definitionId);
+
+                return branchGroups;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching pipeline branches for definition {DefinitionId}", definitionId);
+                return new List<PipelineBranchInfo>();
+            }
+        }) ?? new List<PipelineBranchInfo>();
+    }
+
+    private List<PipelineBranchInfo> ApplyBranchSorting(
+        List<PipelineBranchInfo> branches, 
+        string sortBy, 
+        string sortOrder)
+    {
+        var isAscending = sortOrder.Equals("asc", StringComparison.OrdinalIgnoreCase);
+        
+        return sortBy.ToLowerInvariant() switch
+        {
+            "latestbuildfinishtime" => isAscending 
+                ? branches.OrderBy(b => b.LatestBuildFinishTime ?? DateTime.MinValue).ToList()
+                : branches.OrderByDescending(b => b.LatestBuildFinishTime ?? DateTime.MinValue).ToList(),
+            
+            "latestbuildstarttime" => isAscending
+                ? branches.OrderBy(b => b.LatestBuildStartTime ?? DateTime.MinValue).ToList()
+                : branches.OrderByDescending(b => b.LatestBuildStartTime ?? DateTime.MinValue).ToList(),
+            
+            "branchname" => isAscending
+                ? branches.OrderBy(b => b.BranchName).ToList()
+                : branches.OrderByDescending(b => b.BranchName).ToList(),
+            
+            "totalbuilds" => isAscending
+                ? branches.OrderBy(b => b.TotalBuilds).ToList()
+                : branches.OrderByDescending(b => b.TotalBuilds).ToList(),
+            
+            _ => branches.OrderByDescending(b => b.LatestBuildFinishTime ?? DateTime.MinValue).ToList()
+        };
     }
 
     public async Task<PagedEnvironmentReportResponse> GetEnvironmentReportsAsync(
@@ -297,48 +404,47 @@ public class AzureDevOpsService : IAzureDevOpsService
         }
 
         var loadBalancerDomain = GetVariableValue("LoadBalancer.Domain");
+        var elsaEnabledStr = GetVariableValue("Elsa.Enabled");
         var kubernetesHostname = GetVariableValue("Kubernetes.HttpRoute.Hostname");
         var tenantName = GetVariableValue("Tenant.Name")?.ToLowerInvariant();
-        var serviceInfoPortalUrl = GetVariableValue("ServiceInfo.PortalUrl")?.ToLowerInvariant();
 
-        if (!string.IsNullOrEmpty(kubernetesHostname))
-        {
-            return $"https://{kubernetesHostname}";
-        }
-        else if (!string.IsNullOrEmpty(serviceInfoPortalUrl))
-        {
-            return serviceInfoPortalUrl;
-        }
-        
-        var envNameLower = environmentName.ToLowerInvariant();
-        string? env = null;
-        if (envNameLower.Contains("uat"))
-        {
-            env = "uat";
-        }
-        else if (envNameLower.Contains("qa"))
-        {
-            env = "qa";
-        }
-        else if (envNameLower.Contains("staging"))
-        {
-            env = "staging";
-        }        
+        var isElsaEnabled = !string.IsNullOrEmpty(elsaEnabledStr) && 
+                           elsaEnabledStr.Equals("true", StringComparison.OrdinalIgnoreCase);
 
-        if (string.IsNullOrEmpty(tenantName))
+        if (!isElsaEnabled)
         {
-            tenantName = envNameLower.StartsWith("originate") ? "originate" : "quote";
+            if (!string.IsNullOrEmpty(loadBalancerDomain))
+            {
+                return $"https://{loadBalancerDomain}";
+            }
         }
-
-        if (!string.IsNullOrEmpty(env))
+        else
         {
-            return $"https://{tenantName}-{env}.flow.optalitix.net/{tenantName}/login";
+            if (!string.IsNullOrEmpty(kubernetesHostname))
+            {
+                return $"https://{kubernetesHostname}";
+            }
+            else if (!string.IsNullOrEmpty(tenantName))
+            {
+                var envNameLower = environmentName.ToLowerInvariant();
+                string env;
+                
+                if (envNameLower.Contains("uat"))
+                {
+                    env = "uat";
+                }
+                else if (envNameLower.Contains("qa"))
+                {
+                    env = "dev";
+                }
+                else
+                {
+                    env = "dev";
+                }
+                
+                return $"https://{tenantName}-{env}.flow.optalitix.net/{tenantName}/login";
+            }
         }
-
-        if (!string.IsNullOrEmpty(loadBalancerDomain))
-        {
-            return $"https://{loadBalancerDomain}";
-        }        
 
         return null;
     }
@@ -366,7 +472,7 @@ public class AzureDevOpsService : IAzureDevOpsService
         return await _cache.GetOrCreateAsync(ENVIRONMENTS_CACHE_KEY, async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = EnvironmentsCacheDuration;
-            entry.Size = 10; // Relative size for cache management
+            entry.Size = 10;
             _logger.LogInformation("Cache miss - fetching environments from Azure DevOps");
             
             var url = $"_apis/distributedtask/environments?api-version={_config.ApiVersion}";
@@ -383,7 +489,7 @@ public class AzureDevOpsService : IAzureDevOpsService
         return await _cache.GetOrCreateAsync(cacheKey, async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = DeploymentRecordsCacheDuration;
-            entry.Size = 5; // Smaller relative size
+            entry.Size = 5;
             _logger.LogInformation("Cache miss - fetching deployment records for environment {EnvironmentId}", environmentId);
             
             var url = $"_apis/distributedtask/environments/{environmentId}/environmentdeploymentrecords?api-version={_config.ApiVersion}";
@@ -398,7 +504,7 @@ public class AzureDevOpsService : IAzureDevOpsService
         return await _cache.GetOrCreateAsync(VARIABLE_GROUPS_CACHE_KEY, async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = VariableGroupsCacheDuration;
-            entry.Size = 15; // Larger relative size for variable groups
+            entry.Size = 15;
             _logger.LogInformation("Cache miss - fetching variable groups from Azure DevOps");
             
             var url = $"_apis/distributedtask/variablegroups?api-version={_config.ApiVersion}";
@@ -415,7 +521,7 @@ public class AzureDevOpsService : IAzureDevOpsService
         return await _cache.GetOrCreateAsync(cacheKey, async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = BuildCacheDuration;
-            entry.Size = 1; // Small size for individual builds
+            entry.Size = 1;
             
             try
             {

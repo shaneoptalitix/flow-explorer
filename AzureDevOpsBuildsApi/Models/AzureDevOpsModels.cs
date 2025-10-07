@@ -78,6 +78,12 @@ public class Owner
     public string Name { get; set; } = string.Empty;
 }
 
+public class BuildsResponse
+{
+    [JsonPropertyName("value")]
+    public List<Build> Value { get; set; } = new();
+}
+
 public class Build
 {
     [JsonPropertyName("id")]
@@ -89,8 +95,14 @@ public class Build
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
     
+    [JsonPropertyName("result")]
+    public string Result { get; set; } = string.Empty;
+    
     [JsonPropertyName("startTime")]
     public DateTime? StartTime { get; set; }
+    
+    [JsonPropertyName("finishTime")]
+    public DateTime? FinishTime { get; set; }
     
     [JsonPropertyName("sourceBranch")]
     public string SourceBranch { get; set; } = string.Empty;
@@ -136,6 +148,20 @@ public class VariableValue
     
     [JsonPropertyName("isSecret")]
     public bool IsSecret { get; set; }
+}
+
+// Pipeline Branch Info
+public class PipelineBranchInfo
+{
+    public string BranchName { get; set; } = string.Empty;
+    public int LatestBuildId { get; set; }
+    public string LatestBuildNumber { get; set; } = string.Empty;
+    public string LatestBuildStatus { get; set; } = string.Empty;
+    public string LatestBuildResult { get; set; } = string.Empty;
+    public DateTime? LatestBuildStartTime { get; set; }
+    public DateTime? LatestBuildFinishTime { get; set; }
+    public string LatestBuildSourceVersion { get; set; } = string.Empty;
+    public int TotalBuilds { get; set; }
 }
 
 // Output model
