@@ -17,7 +17,7 @@ public interface IAzureDevOpsService
     Task<List<PipelineBranchInfo>> GetPipelineBranchesAsync(
         int definitionId,
         int top = 300,
-        string sortBy = "latestBuildFinishTime",
+        string sortBy = "latestBuildStartTime",
         string sortOrder = "desc");
 
     bool ClearCache();

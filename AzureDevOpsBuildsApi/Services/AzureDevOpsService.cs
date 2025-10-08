@@ -63,7 +63,7 @@ public class AzureDevOpsService : IAzureDevOpsService
     public async Task<List<PipelineBranchInfo>> GetPipelineBranchesAsync(
         int definitionId,
         int top = 300,
-        string sortBy = "latestBuildFinishTime",
+        string sortBy = "latestBuildStartTime",
         string sortOrder = "desc")
     {
         var cacheKey = $"{PIPELINE_BRANCHES_CACHE_KEY_PREFIX}{definitionId}_{sortBy}_{sortOrder}";
@@ -80,7 +80,7 @@ public class AzureDevOpsService : IAzureDevOpsService
             try
             {
                 // Get recent builds for this definition (last 200 builds to ensure we get all branches)
-                var url = $"_apis/build/builds?definitions={definitionId}&top={top}&maxBuildsPerDefinition={top}&api-version={_config.ApiVersion}&queryOrder=finishTimeDescending&statusFilter=completed";
+                var url = $"_apis/build/builds?definitions={definitionId}&top={top}&maxBuildsPerDefinition={top}&api-version={_config.ApiVersion}&queryOrder=startTimeDescending&resultFilter=completed";
                 var response = await _httpClient.GetStringAsync(url);
                 var buildsResponse = JsonSerializer.Deserialize<BuildsResponse>(response);
                 var builds = buildsResponse?.Value ?? new List<Build>();
@@ -92,7 +92,7 @@ public class AzureDevOpsService : IAzureDevOpsService
                     .GroupBy(b => b.SourceBranch)
                     .Select(g =>
                     {
-                        var latestBuild = g.OrderByDescending(b => b.FinishTime ?? DateTime.MinValue).First();
+                        var latestBuild = g.OrderByDescending(b => b.StartTime ?? DateTime.MinValue).First();
 
                         return new PipelineBranchInfo
                         {

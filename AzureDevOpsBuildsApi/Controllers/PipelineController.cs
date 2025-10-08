@@ -38,7 +38,7 @@ public class PipelineController : ControllerBase
     public async Task<ActionResult<List<PipelineBranchInfo>>> GetPipelineBranches(
         int definitionId,        
         [FromQuery] int top = 300,
-        [FromQuery] string sortBy = "latestBuildFinishTime",
+        [FromQuery] string sortBy = "latestBuildStartTime",
         [FromQuery] string sortOrder = "desc")
     {
         try
