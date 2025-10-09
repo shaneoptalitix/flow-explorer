@@ -345,21 +345,26 @@
             }
 
             // Create historical deployments HTML - DEFAULT TO COLLAPSED
+            // Filter out deployments with N/A or empty build numbers
+            const validHistoricalDeployments = deployment.historicalDeployments 
+                ? deployment.historicalDeployments.filter(histDep => histDep.buildNumber && histDep.buildNumber.trim() !== '')
+                : [];
+            
             let historicalHtml = '';
-            if (deployment.historicalDeployments && deployment.historicalDeployments.length > 0) {
+            if (validHistoricalDeployments.length > 0) {
                 historicalHtml = `
                     <div class="mb-4 pb-4 border-b border-gray-200">
                         <button onclick="toggleHistoricalAccordion(${deployment.environmentId})" 
                                 class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors">
                             <span class="font-medium text-gray-700 flex items-center">
                                 <i class="fas fa-history mr-2 text-purple-600"></i>
-                                Historical Deployments (${deployment.historicalDeployments.length})
+                                Historical Deployments (${validHistoricalDeployments.length})
                             </span>
                             <i class="fas fa-chevron-down text-gray-500" id="historical-icon-${deployment.environmentId}"></i>
                         </button>
                         <div id="historical-accordion-${deployment.environmentId}" class="historical-accordion-content mt-4">
                             <div class="space-y-3">
-                                ${deployment.historicalDeployments.map(histDep => createHistoricalDeploymentItem(histDep)).join('')}
+                                ${validHistoricalDeployments.map(histDep => createHistoricalDeploymentItem(histDep)).join('')}
                             </div>
                         </div>
                     </div>
