@@ -146,8 +146,8 @@
 
     <script>
         // Configuration - Update these values
-        //const API_BASE_URL = 'https://localhost:8443'; // when local
-        const API_BASE_URL = 'https://azuredevopsbuildsapi-cdadgzh8cwesccgx.uksouth-01.azurewebsites.net'; // when publishing
+        const API_BASE_URL = 'https://localhost:8443'; // when local
+        //const API_BASE_URL = 'https://azuredevopsbuildsapi-cdadgzh8cwesccgx.uksouth-01.azurewebsites.net'; // when publishing
         const ORGANIZATION_NAME = 'OptalitixLimited';
         const PROJECT_NAME = 'Flow';
 
@@ -264,18 +264,16 @@
 
         // Create deployment item
         function createDeploymentItem(deployment) {
-            const loadBalancerDomain = deployment.variableGroupVariables?.['LoadBalancer.Domain'];
-            
             // Create environment name (with link if PortalUrl exists)
             let envNameHtml;
             if (deployment.portalUrl) {
                 envNameHtml = `<a href="${escapeHtml(deployment.portalUrl)}" target="_blank" rel="noopener noreferrer" 
-                    class="text-blue-600 hover:text-blue-800 font-semibold flex items-center">
+                    class="text-blue-600 hover:text-blue-800 text-2xl font-bold flex items-center">
                     ${escapeHtml(deployment.environmentName)}
-                    <i class="fas fa-external-link-alt ml-2 text-sm"></i>
+                    <i class="fas fa-external-link-alt ml-2 text-lg"></i>
                 </a>`;
             } else {
-                envNameHtml = `<span class="font-semibold text-gray-800">${escapeHtml(deployment.environmentName)}</span>`;
+                envNameHtml = `<span class="text-2xl font-bold text-gray-800">${escapeHtml(deployment.environmentName)}</span>`;
             }
 
             // Create build number link
@@ -371,34 +369,37 @@
             return `
                 <div class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow">
                     <div class="p-6">
-                        <!-- Header Grid -->
-                        <div class="grid grid-cols-1 md:grid-cols-6 gap-4 mb-4">
-                            <div class="md:col-span-2">
-                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Environment</p>
-                                ${envNameHtml}
-                            </div>
-                            <div>
-                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Number</p>
-                                ${buildNumberHtml}
-                            </div>
-                            <div>
-                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch</p>
-                                <span class="font-mono text-sm text-gray-800">${escapeHtml(deployment.buildSourceBranch || 'N/A')}</span>
-                            </div>
-                            <div>
-                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Deployment Date</p>
-                                <span class="text-sm text-gray-700">${formatDate(deployment.deploymentRecordFinishTime)}</span>
-                            </div>
-                            <div>
-                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Date</p>
-                                <span class="text-sm text-gray-700">${formatDate(deployment.buildStartTime)}</span>
-                            </div>
+                        <!-- Environment Name Header -->
+                        <div class="mb-6 pb-4 border-b-2 border-gray-200">
+                            ${envNameHtml}
                         </div>
 
-                        <!-- Source Version -->
-                        <div class="mb-4 pb-4 border-b border-gray-200">
-                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
-                            ${sourceVersionHtml}
+                        <!-- Current Deployment Info (same style as historical) -->
+                        <div class="mb-6 pb-4 border-b border-gray-200">
+                            <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+                                    <div>
+                                        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Number</p>
+                                        ${buildNumberHtml}
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch</p>
+                                        <span class="font-mono text-sm text-gray-800">${escapeHtml(deployment.buildSourceBranch || 'N/A')}</span>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
+                                        ${sourceVersionHtml}
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Deployment Date</p>
+                                        <span class="text-sm text-gray-700">${formatDate(deployment.deploymentRecordFinishTime)}</span>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Date</p>
+                                        <span class="text-sm text-gray-700">${formatDate(deployment.buildStartTime)}</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Historical Deployments (COLLAPSED BY DEFAULT) -->
