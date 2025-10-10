@@ -163,6 +163,7 @@
         let currentPage = 1;
         let totalPages = 1;
         const branchesCache = {};
+        const branchesLoadedForEnvironment = {};
 
         // Format date
         function formatDate(dateString) {
@@ -222,6 +223,7 @@
             const icon = document.getElementById(`branches-icon-${environmentId}`);
             const loadingIndicator = document.getElementById(`branches-loading-${environmentId}`);
             const branchesContent = document.getElementById(`branches-content-${environmentId}`);
+            const branchesCount = document.getElementById(`branches-count-${environmentId}`);
             
             if (content.classList.contains('active')) {
                 content.classList.remove('active');
@@ -232,13 +234,32 @@
                 icon.classList.remove('fa-chevron-down');
                 icon.classList.add('fa-chevron-up');
                 
-                // Load branches if not already loaded
-                if (!branchesCache[definitionId]) {
+                // Check if content has already been loaded for this specific environment
+                if (branchesLoadedForEnvironment[environmentId]) {
+                    return; // Already loaded, don't reload
+                }
+                
+                // Check if branches are already cached for this definition
+                if (branchesCache[definitionId]) {
+                    // Use cached data
+                    const branches = branchesCache[definitionId];
+                    branchesContent.innerHTML = createBranchesHTML(branches);
+                    if (branches && branches.length > 0) {
+                        branchesCount.textContent = `(${branches.length})`;
+                    }
+                    branchesLoadedForEnvironment[environmentId] = true;
+                } else {
+                    // Load branches from API
                     loadingIndicator.classList.remove('hidden');
                     try {
                         const branches = await loadBranches(definitionId);
                         branchesCache[definitionId] = branches;
                         branchesContent.innerHTML = createBranchesHTML(branches);
+                        // Update count after loading
+                        if (branches && branches.length > 0) {
+                            branchesCount.textContent = `(${branches.length})`;
+                        }
+                        branchesLoadedForEnvironment[environmentId] = true;
                     } catch (error) {
                         branchesContent.innerHTML = `
                             <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
@@ -246,6 +267,7 @@
                                 <p class="text-red-700 text-sm">Failed to load branches: ${escapeHtml(error.message)}</p>
                             </div>
                         `;
+                        branchesLoadedForEnvironment[environmentId] = true;
                     } finally {
                         loadingIndicator.classList.add('hidden');
                     }
@@ -470,7 +492,9 @@
 
             // Create variables HTML
             let variablesHtml = '<p class="text-gray-500 italic">No variables available</p>';
+            let variableCount = 0;
             if (deployment.variableGroupVariables && Object.keys(deployment.variableGroupVariables).length > 0) {
+                variableCount = Object.keys(deployment.variableGroupVariables).length;
                 variablesHtml = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">';
                 for (const [key, value] of Object.entries(deployment.variableGroupVariables)) {
                     const isSecret = value === '[HIDDEN]';
@@ -513,16 +537,17 @@
             const branchesHtml = `
                 <div class="mb-4 pb-4 border-b border-gray-200">
                     <button onclick="toggleBranchesAccordion(${deployment.environmentId}, ${deployment.deploymentRecordDefinitionId})" 
-                            class="w-full flex items-center justify-between px-4 py-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
+                            class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors">
                         <span class="font-medium text-gray-700 flex items-center">
                             <i class="fas fa-code-branch mr-2 text-green-600"></i>
-                            Release Branches
+                            Pipeline Branches
+                            <span id="branches-count-${deployment.environmentId}" class="ml-2"></span>
                         </span>
                         <i class="fas fa-chevron-down text-gray-500" id="branches-icon-${deployment.environmentId}"></i>
                     </button>
                     <div id="branches-accordion-${deployment.environmentId}" class="branches-accordion-content mt-4">
                         <div id="branches-loading-${deployment.environmentId}" class="hidden text-center py-4">
-                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto mb-2"></div>
+                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-600 mx-auto mb-2"></div>
                             <p class="text-gray-600 text-sm">Loading branches...</p>
                         </div>
                         <div id="branches-content-${deployment.environmentId}">
@@ -606,7 +631,7 @@
                                 class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors">
                             <span class="font-medium text-gray-700 flex items-center">
                                 <i class="fas fa-cog mr-2 text-blue-600"></i>
-                                Variables ${deployment.variableGroupName ? `(${escapeHtml(deployment.variableGroupName)})` : ''}
+                                Variables (${variableCount})
                             </span>
                             <i class="fas fa-chevron-down text-gray-500" id="icon-${deployment.environmentId}"></i>
                         </button>
@@ -681,6 +706,7 @@
 
             // Clear branches cache when loading new deployments
             Object.keys(branchesCache).forEach(key => delete branchesCache[key]);
+            Object.keys(branchesLoadedForEnvironment).forEach(key => delete branchesLoadedForEnvironment[key]);
 
             // Show loading
             document.getElementById('loadingState').classList.remove('hidden');
