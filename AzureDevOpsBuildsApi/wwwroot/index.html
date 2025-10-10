@@ -185,6 +185,24 @@
             return div.innerHTML;
         }
 
+        // Helper function to create a Bitbucket branch link
+        function createBranchLink(branchName) {
+            if (!branchName || branchName === 'N/A') {
+                return `<span class="font-mono text-sm text-gray-600">N/A</span>`;
+            }
+            
+            // Clean the branch name for URL and display - remove refs/heads/ prefix if present
+            const cleanBranchName = branchName.replace(/^refs\/heads\//, '');
+            const encodedBranch = encodeURIComponent(cleanBranchName);
+            
+            return `<a href="https://bitbucket.org/Optalitix/optalitix.framework/branch/${encodedBranch}" 
+                target="_blank" rel="noopener noreferrer" 
+                class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center break-all">
+                ${escapeHtml(cleanBranchName)}
+                <i class="fas fa-external-link-alt ml-2 text-xs flex-shrink-0"></i>
+            </a>`;
+        }
+
         // Toggle accordion
         function toggleAccordion(id) {
             const content = document.getElementById(`accordion-${id}`);
@@ -345,7 +363,7 @@
                         </div>
                         <div>
                             <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch Name</p>
-                            <span class="font-mono text-sm text-gray-800">${escapeHtml(branch.branchName || 'N/A')}</span>
+                            ${createBranchLink(branch.branchName)}
                         </div>
                         <div>
                             <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
@@ -423,7 +441,7 @@
                         </div>
                         <div>
                             <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch</p>
-                            <span class="font-mono text-sm text-gray-800">${escapeHtml(deployment.buildSourceBranch || 'N/A')}</span>
+                            ${createBranchLink(deployment.buildSourceBranch)}
                         </div>
                         <div>
                             <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
@@ -602,7 +620,7 @@
                                     </div>
                                     <div>
                                         <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch</p>
-                                        <span class="font-mono text-sm text-gray-800">${escapeHtml(deployment.buildSourceBranch || 'N/A')}</span>
+                                        ${createBranchLink(deployment.buildSourceBranch)}
                                     </div>
                                     <div>
                                         <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
