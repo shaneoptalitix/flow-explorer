@@ -27,6 +27,15 @@
             max-height: 3000px;
             transition: max-height 0.5s ease-in;
         }
+        .branches-accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .branches-accordion-content.active {
+            max-height: 4000px;
+            transition: max-height 0.5s ease-in;
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -153,6 +162,7 @@
 
         let currentPage = 1;
         let totalPages = 1;
+        const branchesCache = {};
 
         // Format date
         function formatDate(dateString) {
@@ -204,6 +214,128 @@
                 icon.classList.remove('fa-chevron-down');
                 icon.classList.add('fa-chevron-up');
             }
+        }
+
+        // Toggle branches accordion
+        async function toggleBranchesAccordion(environmentId, definitionId) {
+            const content = document.getElementById(`branches-accordion-${environmentId}`);
+            const icon = document.getElementById(`branches-icon-${environmentId}`);
+            const loadingIndicator = document.getElementById(`branches-loading-${environmentId}`);
+            const branchesContent = document.getElementById(`branches-content-${environmentId}`);
+            
+            if (content.classList.contains('active')) {
+                content.classList.remove('active');
+                icon.classList.remove('fa-chevron-up');
+                icon.classList.add('fa-chevron-down');
+            } else {
+                content.classList.add('active');
+                icon.classList.remove('fa-chevron-down');
+                icon.classList.add('fa-chevron-up');
+                
+                // Load branches if not already loaded
+                if (!branchesCache[definitionId]) {
+                    loadingIndicator.classList.remove('hidden');
+                    try {
+                        const branches = await loadBranches(definitionId);
+                        branchesCache[definitionId] = branches;
+                        branchesContent.innerHTML = createBranchesHTML(branches);
+                    } catch (error) {
+                        branchesContent.innerHTML = `
+                            <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+                                <i class="fas fa-exclamation-circle text-red-500 mb-2"></i>
+                                <p class="text-red-700 text-sm">Failed to load branches: ${escapeHtml(error.message)}</p>
+                            </div>
+                        `;
+                    } finally {
+                        loadingIndicator.classList.add('hidden');
+                    }
+                }
+            }
+        }
+
+        // Load branches from API
+        async function loadBranches(definitionId) {
+            const url = `${API_BASE_URL}/api/Pipeline/${definitionId}/branches`;
+            const response = await fetch(url);
+            
+            if (!response.ok) {
+                throw new Error(`API returned ${response.status}: ${response.statusText}`);
+            }
+            
+            return await response.json();
+        }
+
+        // Create branches HTML
+        function createBranchesHTML(branches) {
+            if (!branches || branches.length === 0) {
+                return `
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                        <i class="fas fa-code-branch text-gray-400 text-2xl mb-2"></i>
+                        <p class="text-gray-500">No branches found</p>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="space-y-3">
+                    ${branches.map(branch => createBranchItem(branch)).join('')}
+                </div>
+            `;
+        }
+
+        // Create branch item
+        function createBranchItem(branch) {
+            const buildNumberHtml = branch.latestBuildId && branch.latestBuildNumber
+                ? `<a href="https://dev.azure.com/${escapeHtml(ORGANIZATION_NAME)}/${escapeHtml(PROJECT_NAME)}/_build/results?buildId=${branch.latestBuildId}&view=results" 
+                    target="_blank" rel="noopener noreferrer" 
+                    class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
+                    ${escapeHtml(branch.latestBuildNumber)}
+                    <i class="fas fa-external-link-alt ml-2 text-xs"></i>
+                </a>`
+                : `<span class="font-mono text-sm text-gray-600">N/A</span>`;
+
+            let sourceVersionHtml;
+            if (branch.latestBuildSourceVersion) {
+                const copyButtonId = `copy-branch-${branch.latestBuildId}`;
+                sourceVersionHtml = `
+                    <div class="flex items-center gap-2">
+                        <a href="https://bitbucket.org/Optalitix/optalitix.framework/commits/${escapeHtml(branch.latestBuildSourceVersion)}" 
+                            target="_blank" rel="noopener noreferrer" 
+                            class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
+                            ${escapeHtml(branch.latestBuildSourceVersion.substring(0, 7))}
+                            <i class="fas fa-external-link-alt ml-2 text-xs"></i>
+                        </a>
+                        <button id="${copyButtonId}" onclick="copyToClipboard('${escapeHtml(branch.latestBuildSourceVersion)}', '${copyButtonId}')" 
+                                class="text-gray-500 hover:text-gray-700 transition-colors" title="Copy full version">
+                            <i class="fas fa-copy text-xs"></i>
+                        </button>
+                    </div>`;
+            } else {
+                sourceVersionHtml = `<span class="font-mono text-sm text-gray-600">N/A</span>`;
+            }
+
+            return `
+                <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <div>
+                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Number</p>
+                            ${buildNumberHtml}
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch Name</p>
+                            <span class="font-mono text-sm text-gray-800">${escapeHtml(branch.branchName || 'N/A')}</span>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
+                            ${sourceVersionHtml}
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Date</p>
+                            <span class="text-sm text-gray-700">${formatDate(branch.latestBuildStartTime)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
         }
 
         // Copy to clipboard function
@@ -377,6 +509,29 @@
                 variablesHtml += '</div>';
             }
 
+            // Create branches section - DEFAULT TO COLLAPSED
+            const branchesHtml = `
+                <div class="mb-4 pb-4 border-b border-gray-200">
+                    <button onclick="toggleBranchesAccordion(${deployment.environmentId}, ${deployment.deploymentRecordDefinitionId})" 
+                            class="w-full flex items-center justify-between px-4 py-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
+                        <span class="font-medium text-gray-700 flex items-center">
+                            <i class="fas fa-code-branch mr-2 text-green-600"></i>
+                            Pipeline Branches
+                        </span>
+                        <i class="fas fa-chevron-down text-gray-500" id="branches-icon-${deployment.environmentId}"></i>
+                    </button>
+                    <div id="branches-accordion-${deployment.environmentId}" class="branches-accordion-content mt-4">
+                        <div id="branches-loading-${deployment.environmentId}" class="hidden text-center py-4">
+                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto mb-2"></div>
+                            <p class="text-gray-600 text-sm">Loading branches...</p>
+                        </div>
+                        <div id="branches-content-${deployment.environmentId}">
+                            <!-- Branches will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            `;
+
             // Create historical deployments HTML - DEFAULT TO COLLAPSED
             // Filter out deployments with N/A or empty build numbers
             const validHistoricalDeployments = deployment.historicalDeployments 
@@ -439,6 +594,9 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Branches Section (COLLAPSED BY DEFAULT) -->
+                        ${branchesHtml}
 
                         <!-- Historical Deployments (COLLAPSED BY DEFAULT) -->
                         ${historicalHtml}
@@ -520,6 +678,9 @@
             const pageSize = document.getElementById('pageSize').value;
             const sortBy = document.getElementById('sortBy').value;
             const sortOrder = document.getElementById('sortOrder').value;
+
+            // Clear branches cache when loading new deployments
+            Object.keys(branchesCache).forEach(key => delete branchesCache[key]);
 
             // Show loading
             document.getElementById('loadingState').classList.remove('hidden');
