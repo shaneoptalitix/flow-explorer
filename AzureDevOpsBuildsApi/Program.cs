@@ -28,12 +28,13 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowWebApp", policy =>
     {
         policy.WithOrigins(
-                "http://localhost:8080", 
-                "https://localhost:7237", 
+                "http://localhost:8080",
+                "https://localhost:7237",
                 "https://localhost:8443",
                 "http://localhost:8081",
                 "null",
-                "https://azuredevopsbuildsapi-cdadgzh8cwesccgx.uksouth-01.azurewebsites.net"
+                "https://azuredevopsbuildsapi-cdadgzh8cwesccgx.uksouth-01.azurewebsites.net",
+                "https://api.bitbucket.org"
               )
               .AllowAnyMethod()
               .AllowAnyHeader()
@@ -44,6 +45,9 @@ builder.Services.AddCors(options =>
 // Register HTTP client and services
 builder.Services.AddHttpClient<IAzureDevOpsService, AzureDevOpsService>();
 builder.Services.AddScoped<IAzureDevOpsService, AzureDevOpsService>();
+
+builder.Services.AddHttpClient<IBitbucketService, BitbucketService>();
+builder.Services.AddScoped<IBitbucketService, BitbucketService>();
 
 var app = builder.Build();
 
@@ -69,9 +73,9 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 
 // Add cache clear endpoint (useful for development/testing)
-app.MapPost("/api/cache/clear", (IAzureDevOpsService azureDevOpsService) =>
+app.MapPost("/api/cache/clear", (IAzureDevOpsService azureDevOpsService, IBitbucketService bitbucketService) =>
 {
-    return azureDevOpsService.ClearCache()
+    return azureDevOpsService.ClearCache() && bitbucketService.ClearCache()
         ? Results.Ok(new { message = "Cache cleared successfully" }) 
         : Results.Problem("Unable to clear cache");    
 });
