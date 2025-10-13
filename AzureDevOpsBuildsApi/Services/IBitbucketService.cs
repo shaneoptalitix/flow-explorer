@@ -4,9 +4,10 @@ namespace AzureDevOpsReporter.Services;
 
 public interface IBitbucketService
 {
-    Task<List<BitbucketCommit>> GetCommitsAsync(
+    Task<PagedBitbucketCommitsResponse> GetCommitsAsync(
         string branchName,
-        int pageLength = 30);
+        int pageLength = 30,
+        int maxPages = 10);
 
     bool ClearCache();
 }

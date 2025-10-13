@@ -56,51 +56,89 @@ public class BitbucketService : IBitbucketService
             _config.Workspace, _config.Repository);
     }
 
-    public async Task<List<BitbucketCommit>> GetCommitsAsync(
+    public async Task<PagedBitbucketCommitsResponse> GetCommitsAsync(
         string branchName,
-        int pageLength = 30)
+        int pageLength = 30,
+        int maxPages = 10)
     {
-        var cacheKey = $"{COMMITS_CACHE_KEY_PREFIX}{_config.Workspace}_{_config.Repository}_{branchName}_{pageLength}";
+        var cacheKey = $"{COMMITS_CACHE_KEY_PREFIX}{_config.Workspace}_{_config.Repository}_{branchName}_{pageLength}_{maxPages}";
 
         return await _cache.GetOrCreateAsync(cacheKey, async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = CommitsCacheDuration;
-            entry.Size = 5;
+            entry.Size = 10;
 
             _logger.LogInformation(
-                "Fetching commits from Bitbucket for {Workspace}/{Repo}/branch/{Branch}",
-                _config.Workspace, _config.Repository, branchName);
+                "Fetching commits from Bitbucket for {Workspace}/{Repo}/branch/{Branch} (maxPages: {MaxPages}, pageLength: {PageLength})",
+                _config.Workspace, _config.Repository, branchName, maxPages, pageLength);
+
+            var allCommits = new List<BitbucketCommit>();
+            var pagesFetched = 0;
+            string? nextUrl = $"repositories/{_config.Workspace}/{_config.Repository}/commits/{branchName}?pagelen={pageLength}";
 
             try
             {
-                var url = $"repositories/{_config.Workspace}/{_config.Repository}/commits/{branchName}?pagelen={pageLength}";
-
-                var response = await _httpClient.GetStringAsync(url);
-                var commitsResponse = JsonSerializer.Deserialize<BitbucketCommitsResponse>(response);
-
-                if (commitsResponse?.Values == null)
+                while (!string.IsNullOrEmpty(nextUrl) && pagesFetched < maxPages)
                 {
-                    _logger.LogWarning("No commits found in Bitbucket response");
-                    return new List<BitbucketCommit>();
+                    _logger.LogInformation(
+                        "Fetching page {Page} for branch {Branch}",
+                        pagesFetched + 1, branchName);
+
+                    var response = await _httpClient.GetStringAsync(nextUrl);
+                    var commitsResponse = JsonSerializer.Deserialize<BitbucketCommitsResponse>(response);
+
+                    if (commitsResponse?.Values == null || commitsResponse.Values.Count == 0)
+                    {
+                        _logger.LogInformation(
+                            "No more commits found on page {Page} for branch {Branch}",
+                            pagesFetched + 1, branchName);
+                        break;
+                    }
+
+                    // Map commits from this page
+                    var pageCommits = commitsResponse.Values.Select(c => new BitbucketCommit
+                    {
+                        CommitId = c.Hash,
+                        ShortCommitId = c.Hash.Length > 7 ? c.Hash.Substring(0, 7) : c.Hash,
+                        Message = c.Message?.Trim() ?? string.Empty,
+                        Author = c.Author?.User?.DisplayName ?? c.Author?.Raw ?? "Unknown",
+                        AuthorUsername = c.Author?.User?.Username ?? string.Empty,
+                        CommitDate = c.Date,
+                        CommitUrl = $"https://bitbucket.org/{_config.Workspace}/{_config.Repository}/commits/{c.Hash}"
+                    }).ToList();
+
+                    allCommits.AddRange(pageCommits);
+                    pagesFetched++;
+
+                    _logger.LogInformation(
+                        "Page {Page} fetched: {Count} commits (Total so far: {Total})",
+                        pagesFetched, pageCommits.Count, allCommits.Count);
+
+                    // Get next page URL from response
+                    nextUrl = commitsResponse.Next;
+
+                    // If we have a next URL, convert it from absolute to relative
+                    if (!string.IsNullOrEmpty(nextUrl))
+                    {                        
+                        nextUrl = nextUrl.Replace(_httpClient.BaseAddress?.ToString()!, string.Empty);
+                    }
                 }
 
-                // Map to simplified output model
-                var commits = commitsResponse.Values.Select(c => new BitbucketCommit
-                {
-                    CommitId = c.Hash,
-                    ShortCommitId = c.Hash.Length > 7 ? c.Hash.Substring(0, 7) : c.Hash,
-                    Message = c.Message?.Trim() ?? string.Empty,
-                    Author = c.Author?.User?.DisplayName ?? c.Author?.Raw ?? "Unknown",
-                    AuthorUsername = c.Author?.User?.Username ?? string.Empty,
-                    CommitDate = c.Date,
-                    CommitUrl = $"https://bitbucket.org/{_config.Workspace}/{_config.Repository}/commits/{c.Hash}"
-                }).ToList();
+                var hasMorePages = !string.IsNullOrEmpty(nextUrl) && pagesFetched >= maxPages;
 
                 _logger.LogInformation(
-                    "Successfully retrieved {Count} commits for {Workspace}/{Repo}/branch/{Branch}",
-                    commits.Count, _config.Workspace, _config.Repository, branchName);
+                    "Successfully retrieved {Total} commits across {Pages} pages for {Workspace}/{Repo}/branch/{Branch}. HasMorePages: {HasMore}",
+                    allCommits.Count, pagesFetched, _config.Workspace, _config.Repository, branchName, hasMorePages);
 
-                return commits;
+                return new PagedBitbucketCommitsResponse
+                {
+                    Commits = allCommits,
+                    TotalCommits = allCommits.Count,
+                    PagesFetched = pagesFetched,
+                    CommitsPerPage = pageLength,
+                    HasMorePages = hasMorePages,
+                    NextPageUrl = hasMorePages ? nextUrl : null
+                };
             }
             catch (HttpRequestException ex)
             {
@@ -116,6 +154,6 @@ public class BitbucketService : IBitbucketService
                     _config.Workspace, _config.Repository, branchName);
                 throw;
             }
-        }) ?? new List<BitbucketCommit>();
+        }) ?? new PagedBitbucketCommitsResponse();
     }
 }

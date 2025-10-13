@@ -56,3 +56,14 @@ public class BitbucketCommit
     public DateTime CommitDate { get; set; }
     public string CommitUrl { get; set; } = string.Empty;
 }
+
+// Paginated response with page details
+public class PagedBitbucketCommitsResponse
+{
+    public List<BitbucketCommit> Commits { get; set; } = new();
+    public int TotalCommits { get; set; }
+    public int PagesFetched { get; set; }
+    public int CommitsPerPage { get; set; }
+    public bool HasMorePages { get; set; }
+    public string? NextPageUrl { get; set; }
+}
