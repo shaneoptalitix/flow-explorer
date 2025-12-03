@@ -723,12 +723,14 @@
             
             // Check for ServiceInfo.PortalUrl
             if (variables['ServiceInfo.PortalUrl'] && variables['ServiceInfo.PortalUrl'] !== '[HIDDEN]') {
-                const portalUrl = variables['ServiceInfo.PortalUrl'];
-                links.push({
-                    label: 'Portal URL',
-                    url: portalUrl,
-                    icon: 'fa-globe'
-                });
+                const portalUrl = variables['ServiceInfo.PortalUrl'];                
+                if (portalUrl.toLowerCase().indexOf('kubernetes') === -1) {
+                    links.push({
+                        label: 'Portal URL',
+                        url: portalUrl,
+                        icon: 'fa-globe'
+                    });
+                }
             }
             
             // Check if environment name contains QA, UAT, or Staging and build tenant link
@@ -740,7 +742,7 @@
                 let environment = '';
                 
                 if (envNameLower.includes('qa')) {
-                    environment = 'dev';
+                    environment = 'qa';
                 } else if (envNameLower.includes('uat')) {
                     environment = 'uat';
                 } else if (envNameLower.includes('staging')) {
