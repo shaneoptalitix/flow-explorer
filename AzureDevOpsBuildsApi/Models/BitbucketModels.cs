@@ -67,3 +67,17 @@ public class PagedBitbucketCommitsResponse
     public bool HasMorePages { get; set; }
     public string? NextPageUrl { get; set; }
 }
+
+// Commit comparison models
+public class CommitComparisonResponse
+{
+    public string FromCommit { get; set; } = string.Empty;
+    public string ToCommit { get; set; } = string.Empty;
+    public string FromCommitShort { get; set; } = string.Empty;
+    public string ToCommitShort { get; set; } = string.Empty;
+    public List<BitbucketCommit> Commits { get; set; } = new();
+    public int TotalCommits { get; set; }
+    public bool FromCommitFound { get; set; }
+    public bool ToCommitFound { get; set; }
+    public string? ErrorMessage { get; set; }
+}

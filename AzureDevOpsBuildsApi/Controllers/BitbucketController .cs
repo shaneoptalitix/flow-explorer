@@ -78,12 +78,67 @@ public class BitbucketController : ControllerBase
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
             _logger.LogError(ex, "Unauthorized access to Bitbucket API");
-            return StatusCode(StatusCodes.Status401Unauthorized, 
+            return StatusCode(StatusCodes.Status401Unauthorized,
                 "Unauthorized: Check Bitbucket credentials in configuration");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error occurred while getting commits for branch {Branch}", branchName);
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                "An error occurred while processing your request");
+        }
+    }
+
+    /// <summary>
+    /// Compares two commits and returns the list of commits between them
+    /// </summary>
+    /// <param name="fromCommit">The older commit hash (can be short or full hash)</param>
+    /// <param name="toCommit">The newer commit hash (can be short or full hash)</param>
+    /// <returns>List of commits between the two specified commits</returns>
+    /// <response code="200">Returns the list of commits between the two commits</response>
+    /// <response code="400">Bad request - invalid parameters</response>
+    /// <response code="500">Internal server error</response>
+    [HttpGet("compare")]
+    [ProducesResponseType(typeof(CommitComparisonResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<CommitComparisonResponse>> CompareCommits(
+        [FromQuery] string fromCommit,
+        [FromQuery] string toCommit)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(fromCommit))
+            {
+                return BadRequest("fromCommit parameter cannot be empty");
+            }
+
+            if (string.IsNullOrWhiteSpace(toCommit))
+            {
+                return BadRequest("toCommit parameter cannot be empty");
+            }
+
+            _logger.LogInformation(
+                "Comparing commits from {FromCommit} to {ToCommit}",
+                fromCommit, toCommit);
+
+            var result = await _bitbucketService.GetCommitDifferenceAsync(fromCommit, toCommit);
+
+            _logger.LogInformation(
+                "Successfully compared commits: found {Count} commits between {FromCommit} and {ToCommit}",
+                result.TotalCommits, fromCommit, toCommit);
+
+            return Ok(result);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _logger.LogError(ex, "Unauthorized access to Bitbucket API");
+            return StatusCode(StatusCodes.Status401Unauthorized,
+                "Unauthorized: Check Bitbucket credentials in configuration");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error occurred while comparing commits {FromCommit} to {ToCommit}", fromCommit, toCommit);
             return StatusCode(StatusCodes.Status500InternalServerError,
                 "An error occurred while processing your request");
         }

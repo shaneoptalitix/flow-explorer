@@ -14,7 +14,9 @@ public class BitbucketService : IBitbucketService
     private readonly BitbucketConfig _config;
 
     private const string COMMITS_CACHE_KEY_PREFIX = "bitbucket_commits_";
+    private const string COMPARISON_CACHE_KEY_PREFIX = "bitbucket_comparison_";
     private static readonly TimeSpan CommitsCacheDuration = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan ComparisonCacheDuration = TimeSpan.FromMinutes(15);
 
     public BitbucketService(
         HttpClient httpClient,
@@ -46,11 +48,11 @@ public class BitbucketService : IBitbucketService
         // Configure Basic Auth
         var authToken = Convert.ToBase64String(
             Encoding.ASCII.GetBytes($"{_config.Username}:{_config.AppPassword}"));
-        _httpClient.DefaultRequestHeaders.Authorization = 
+        _httpClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", authToken);
-        
+
         _httpClient.BaseAddress = new Uri("https://api.bitbucket.org/2.0/");
-        
+
         _logger.LogInformation(
             "Bitbucket service configured for workspace: {Workspace}, repo: {Repo}",
             _config.Workspace, _config.Repository);
@@ -119,7 +121,7 @@ public class BitbucketService : IBitbucketService
 
                     // If we have a next URL, convert it from absolute to relative
                     if (!string.IsNullOrEmpty(nextUrl))
-                    {                        
+                    {
                         nextUrl = nextUrl.Replace(_httpClient.BaseAddress?.ToString()!, string.Empty);
                     }
                 }
@@ -142,18 +144,250 @@ public class BitbucketService : IBitbucketService
             }
             catch (HttpRequestException ex)
             {
-                _logger.LogError(ex, 
+                _logger.LogError(ex,
                     "HTTP error fetching commits for {Workspace}/{Repo}/branch/{Branch}: {StatusCode}",
                     _config.Workspace, _config.Repository, branchName, ex.StatusCode);
                 throw;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, 
+                _logger.LogError(ex,
                     "Error fetching commits for {Workspace}/{Repo}/branch/{Branch}",
                     _config.Workspace, _config.Repository, branchName);
                 throw;
             }
         }) ?? new PagedBitbucketCommitsResponse();
+    }
+
+    public async Task<CommitComparisonResponse> GetCommitDifferenceAsync(
+        string fromCommit,
+        string toCommit)
+    {
+        var cacheKey = $"{COMPARISON_CACHE_KEY_PREFIX}{_config.Workspace}_{_config.Repository}_{fromCommit}_{toCommit}";
+
+        return await _cache.GetOrCreateAsync(cacheKey, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = ComparisonCacheDuration;
+            entry.Size = 10;
+
+            _logger.LogInformation(
+                "Comparing commits from {FromCommit} to {ToCommit} for {Workspace}/{Repo}",
+                fromCommit, toCommit, _config.Workspace, _config.Repository);
+
+            var response = new CommitComparisonResponse
+            {
+                FromCommit = fromCommit,
+                ToCommit = toCommit,
+                FromCommitShort = fromCommit.Length > 7 ? fromCommit.Substring(0, 7) : fromCommit,
+                ToCommitShort = toCommit.Length > 7 ? toCommit.Substring(0, 7) : toCommit
+            };
+
+            try
+            {
+                // Use Bitbucket's diff API which is more accurate
+                var diffUrl = $"repositories/{_config.Workspace}/{_config.Repository}/diff/{toCommit}..{fromCommit}";
+
+                try
+                {
+                    // First, check if we can use the commits API for a direct comparison
+                    var compareUrl = $"repositories/{_config.Workspace}/{_config.Repository}/commits/?include={toCommit}&exclude={fromCommit}";
+
+                    _logger.LogInformation("Attempting direct comparison using include/exclude");
+
+                    var allCommits = new List<BitbucketCommit>();
+                    var pagesFetched = 0;
+                    var maxPages = 50;
+                    string? nextUrl = compareUrl + "&pagelen=100";
+
+                    while (!string.IsNullOrEmpty(nextUrl) && pagesFetched < maxPages)
+                    {
+                        _logger.LogInformation("Fetching comparison page {Page}", pagesFetched + 1);
+
+                        var apiResponse = await _httpClient.GetStringAsync(nextUrl);
+                        var commitsResponse = JsonSerializer.Deserialize<BitbucketCommitsResponse>(apiResponse);
+
+                        if (commitsResponse?.Values == null || commitsResponse.Values.Count == 0)
+                        {
+                            break;
+                        }
+
+                        var pageCommits = commitsResponse.Values.Select(commit => new BitbucketCommit
+                        {
+                            CommitId = commit.Hash,
+                            ShortCommitId = commit.Hash.Length > 7 ? commit.Hash.Substring(0, 7) : commit.Hash,
+                            Message = commit.Message?.Trim() ?? string.Empty,
+                            Author = commit.Author?.User?.DisplayName ?? commit.Author?.Raw ?? "Unknown",
+                            AuthorUsername = commit.Author?.User?.Username ?? string.Empty,
+                            CommitDate = commit.Date,
+                            CommitUrl = $"https://bitbucket.org/{_config.Workspace}/{_config.Repository}/commits/{commit.Hash}"
+                        }).ToList();
+
+                        allCommits.AddRange(pageCommits);
+                        pagesFetched++;
+
+                        _logger.LogInformation(
+                            "Page {Page} fetched: {Count} commits (Total so far: {Total})",
+                            pagesFetched, pageCommits.Count, allCommits.Count);
+
+                        // Get next page URL
+                        nextUrl = commitsResponse.Next;
+                        if (!string.IsNullOrEmpty(nextUrl))
+                        {
+                            nextUrl = nextUrl.Replace(_httpClient.BaseAddress?.ToString()!, string.Empty);
+                        }
+                    }
+
+                    response.Commits = allCommits;
+                    response.TotalCommits = allCommits.Count;
+                    response.FromCommitFound = true;
+                    response.ToCommitFound = true;
+
+                    if (pagesFetched >= maxPages && !string.IsNullOrEmpty(nextUrl))
+                    {
+                        response.ErrorMessage = $"More than {allCommits.Count} commits found between these releases. Showing first {allCommits.Count}.";
+                        _logger.LogWarning(response.ErrorMessage);
+                    }
+
+                    _logger.LogInformation(
+                        "Successfully compared commits using include/exclude: found {Count} commits between {FromCommit} and {ToCommit}",
+                        allCommits.Count, fromCommit, toCommit);
+
+                    return response;
+                }
+                catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    _logger.LogWarning("Include/exclude comparison failed, commits may not be on same branch: {Message}", ex.Message);
+                    response.ErrorMessage = "The two commits do not appear to be on the same branch or one of the commits was not found. Please ensure both commits are from the same branch lineage.";
+                    response.FromCommitFound = false;
+                    response.ToCommitFound = false;
+                    return response;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Include/exclude comparison failed, falling back to legacy method");
+
+                    // Fall back to the old method
+                    return await FallbackComparisonAsync(fromCommit, toCommit, response);
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogError(ex,
+                    "HTTP error comparing commits for {Workspace}/{Repo}: {StatusCode}",
+                    _config.Workspace, _config.Repository, ex.StatusCode);
+
+                response.ErrorMessage = $"HTTP error: {ex.Message}";
+                return response;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error comparing commits for {Workspace}/{Repo}",
+                    _config.Workspace, _config.Repository);
+
+                response.ErrorMessage = $"Error: {ex.Message}";
+                return response;
+            }
+        }) ?? new CommitComparisonResponse
+        {
+            FromCommit = fromCommit,
+            ToCommit = toCommit,
+            ErrorMessage = "Failed to retrieve comparison from cache"
+        };
+    }
+
+    private async Task<CommitComparisonResponse> FallbackComparisonAsync(
+        string fromCommit,
+        string toCommit,
+        CommitComparisonResponse response)
+    {
+        _logger.LogInformation("Using fallback comparison method");
+
+        // Fetch commits starting from toCommit (newer) going backwards
+        var allCommits = new List<BitbucketCommit>();
+        var pagesFetched = 0;
+        var maxPages = 50;
+        var foundFromCommit = false;
+        var foundToCommit = false;
+
+        string? nextUrl = $"repositories/{_config.Workspace}/{_config.Repository}/commits/{toCommit}?pagelen=100";
+
+        while (!string.IsNullOrEmpty(nextUrl) && pagesFetched < maxPages && !foundFromCommit)
+        {
+            _logger.LogInformation("Fetching fallback comparison page {Page}", pagesFetched + 1);
+
+            var apiResponse = await _httpClient.GetStringAsync(nextUrl);
+            var commitsResponse = JsonSerializer.Deserialize<BitbucketCommitsResponse>(apiResponse);
+
+            if (commitsResponse?.Values == null || commitsResponse.Values.Count == 0)
+            {
+                break;
+            }
+
+            foreach (var commit in commitsResponse.Values)
+            {
+                // Check if this is the toCommit (should be first)
+                if (commit.Hash.StartsWith(toCommit, StringComparison.OrdinalIgnoreCase) && !foundToCommit)
+                {
+                    foundToCommit = true;
+                    _logger.LogInformation("Found toCommit: {Commit}", commit.Hash);
+                    continue; // Don't include the toCommit itself
+                }
+
+                // Check if this is the fromCommit (we stop here)
+                if (commit.Hash.StartsWith(fromCommit, StringComparison.OrdinalIgnoreCase))
+                {
+                    foundFromCommit = true;
+                    _logger.LogInformation("Found fromCommit: {Commit}", commit.Hash);
+                    break; // Stop - we've reached the starting commit
+                }
+
+                // Only add commits after we've found toCommit
+                if (foundToCommit)
+                {
+                    allCommits.Add(new BitbucketCommit
+                    {
+                        CommitId = commit.Hash,
+                        ShortCommitId = commit.Hash.Length > 7 ? commit.Hash.Substring(0, 7) : commit.Hash,
+                        Message = commit.Message?.Trim() ?? string.Empty,
+                        Author = commit.Author?.User?.DisplayName ?? commit.Author?.Raw ?? "Unknown",
+                        AuthorUsername = commit.Author?.User?.Username ?? string.Empty,
+                        CommitDate = commit.Date,
+                        CommitUrl = $"https://bitbucket.org/{_config.Workspace}/{_config.Repository}/commits/{commit.Hash}"
+                    });
+                }
+            }
+
+            pagesFetched++;
+
+            // Get next page URL
+            nextUrl = commitsResponse.Next;
+            if (!string.IsNullOrEmpty(nextUrl))
+            {
+                nextUrl = nextUrl.Replace(_httpClient.BaseAddress?.ToString()!, string.Empty);
+            }
+        }
+
+        response.Commits = allCommits;
+        response.TotalCommits = allCommits.Count;
+        response.FromCommitFound = foundFromCommit;
+        response.ToCommitFound = foundToCommit;
+
+        if (!foundToCommit)
+        {
+            response.ErrorMessage = $"Could not find the newer commit ({toCommit}) in the repository history.";
+            _logger.LogWarning(response.ErrorMessage);
+        }
+        else if (!foundFromCommit)
+        {
+            response.ErrorMessage = $"Could not find the older commit ({fromCommit}) in the repository history after checking {allCommits.Count} commits. These commits may not be on the same branch, or there are more than 5000 commits between them.";
+            _logger.LogWarning(response.ErrorMessage);
+        }
+
+        _logger.LogInformation(
+            "Fallback comparison completed: found {Count} commits between {FromCommit} and {ToCommit}",
+            allCommits.Count, fromCommit, toCommit);
+
+        return response;
     }
 }
