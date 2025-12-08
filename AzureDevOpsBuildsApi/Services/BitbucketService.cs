@@ -74,28 +74,123 @@ public class BitbucketService : IBitbucketService
                 "Fetching commits from Bitbucket for {Workspace}/{Repo}/branch/{Branch} (maxPages: {MaxPages}, pageLength: {PageLength})",
                 _config.Workspace, _config.Repository, branchName, maxPages, pageLength);
 
+            // ====== ENHANCED DIAGNOSTIC LOGGING ======
+            _logger.LogInformation(
+                "[DIAGNOSTIC] Raw branch name received: '{BranchName}' (Length: {Length}, Has refs/heads/: {HasRefsHeads})",
+                branchName,
+                branchName?.Length ?? 0,
+                branchName?.StartsWith("refs/heads/") ?? false);
+
             var allCommits = new List<BitbucketCommit>();
             var pagesFetched = 0;
-            string? nextUrl = $"repositories/{_config.Workspace}/{_config.Repository}/commits/{branchName}?pagelen={pageLength}";
+
+            // Clean the branch name properly for Bitbucket API
+            var cleanBranchName = branchName.Replace("refs/heads/", "");
+            _logger.LogInformation(
+                "[DIAGNOSTIC] Cleaned branch name: '{CleanBranch}' (Original: '{OriginalBranch}')",
+                cleanBranchName, branchName);
+
+            // URL encode the branch name - Use Uri.EscapeDataString for proper encoding
+            var encodedBranch = Uri.EscapeDataString(cleanBranchName);
+            _logger.LogInformation(
+                "[DIAGNOSTIC] URL-encoded branch name: '{EncodedBranch}' (Clean: '{CleanBranch}')",
+                encodedBranch, cleanBranchName);
+
+            string? nextUrl = $"repositories/{_config.Workspace}/{_config.Repository}/commits/{encodedBranch}?pagelen={pageLength}";
+
+            _logger.LogInformation(
+                "[DIAGNOSTIC] Full API endpoint: {BaseUrl}{RelativeUrl}",
+                _httpClient.BaseAddress, nextUrl);
 
             try
             {
                 while (!string.IsNullOrEmpty(nextUrl) && pagesFetched < maxPages)
                 {
                     _logger.LogInformation(
-                        "Fetching page {Page} for branch {Branch}",
-                        pagesFetched + 1, branchName);
+                        "[DIAGNOSTIC] Attempting to fetch page {Page} for branch '{Branch}' using URL: {Url}",
+                        pagesFetched + 1, cleanBranchName, nextUrl);
 
-                    var response = await _httpClient.GetStringAsync(nextUrl);
+                    HttpResponseMessage httpResponse;
+                    try
+                    {
+                        // Make the request and capture the full response
+                        httpResponse = await _httpClient.GetAsync(nextUrl);
+
+                        _logger.LogInformation(
+                            "[DIAGNOSTIC] HTTP Response received - Status: {StatusCode} ({StatusCodeNumber}), Reason: {ReasonPhrase}",
+                            httpResponse.StatusCode,
+                            (int)httpResponse.StatusCode,
+                            httpResponse.ReasonPhrase ?? "N/A");
+
+                        // If not successful, log the error details
+                        if (!httpResponse.IsSuccessStatusCode)
+                        {
+                            var errorContent = await httpResponse.Content.ReadAsStringAsync();
+                            _logger.LogError(
+                                "[DIAGNOSTIC] HTTP Error Details:\n" +
+                                "  Status Code: {StatusCode} ({StatusCodeNumber})\n" +
+                                "  URL: {Url}\n" +
+                                "  Branch (original): '{OriginalBranch}'\n" +
+                                "  Branch (cleaned): '{CleanBranch}'\n" +
+                                "  Branch (encoded): '{EncodedBranch}'\n" +
+                                "  Workspace: {Workspace}\n" +
+                                "  Repository: {Repository}\n" +
+                                "  Response Body: {ErrorBody}",
+                                httpResponse.StatusCode,
+                                (int)httpResponse.StatusCode,
+                                nextUrl,
+                                branchName,
+                                cleanBranchName,
+                                encodedBranch,
+                                _config.Workspace,
+                                _config.Repository,
+                                errorContent.Length > 500 ? errorContent.Substring(0, 500) + "..." : errorContent);
+                        }
+
+                        httpResponse.EnsureSuccessStatusCode();
+                    }
+                    catch (HttpRequestException ex)
+                    {
+                        _logger.LogError(ex,
+                            "[DIAGNOSTIC] HttpRequestException Details:\n" +
+                            "  Exception Message: {Message}\n" +
+                            "  Status Code: {StatusCode}\n" +
+                            "  URL: {Url}\n" +
+                            "  Branch (original): '{OriginalBranch}'\n" +
+                            "  Branch (cleaned): '{CleanBranch}'\n" +
+                            "  Branch (encoded): '{EncodedBranch}'\n" +
+                            "  Workspace: {Workspace}\n" +
+                            "  Repository: {Repository}",
+                            ex.Message,
+                            ex.StatusCode,
+                            nextUrl,
+                            branchName,
+                            cleanBranchName,
+                            encodedBranch,
+                            _config.Workspace,
+                            _config.Repository);
+                        throw;
+                    }
+
+                    var response = await httpResponse.Content.ReadAsStringAsync();
+
+                    _logger.LogInformation(
+                        "[DIAGNOSTIC] Response content length: {Length} bytes",
+                        response.Length);
+
                     var commitsResponse = JsonSerializer.Deserialize<BitbucketCommitsResponse>(response);
 
                     if (commitsResponse?.Values == null || commitsResponse.Values.Count == 0)
                     {
                         _logger.LogInformation(
-                            "No more commits found on page {Page} for branch {Branch}",
-                            pagesFetched + 1, branchName);
+                            "[DIAGNOSTIC] No more commits found on page {Page} for branch {Branch}",
+                            pagesFetched + 1, cleanBranchName);
                         break;
                     }
+
+                    _logger.LogInformation(
+                        "[DIAGNOSTIC] Successfully deserialized {Count} commits from response",
+                        commitsResponse.Values.Count);
 
                     // Map commits from this page
                     var pageCommits = commitsResponse.Values.Select(c => new BitbucketCommit
@@ -122,7 +217,15 @@ public class BitbucketService : IBitbucketService
                     // If we have a next URL, convert it from absolute to relative
                     if (!string.IsNullOrEmpty(nextUrl))
                     {
-                        nextUrl = nextUrl.Replace(_httpClient.BaseAddress?.ToString()!, string.Empty);
+                        var baseUrl = _httpClient.BaseAddress?.ToString();
+                        if (!string.IsNullOrEmpty(baseUrl) && nextUrl.StartsWith(baseUrl))
+                        {
+                            nextUrl = nextUrl.Replace(baseUrl, string.Empty);
+                        }
+
+                        _logger.LogInformation(
+                            "[DIAGNOSTIC] Next page URL: {NextUrl}",
+                            nextUrl);
                     }
                 }
 
@@ -130,7 +233,7 @@ public class BitbucketService : IBitbucketService
 
                 _logger.LogInformation(
                     "Successfully retrieved {Total} commits across {Pages} pages for {Workspace}/{Repo}/branch/{Branch}. HasMorePages: {HasMore}",
-                    allCommits.Count, pagesFetched, _config.Workspace, _config.Repository, branchName, hasMorePages);
+                    allCommits.Count, pagesFetched, _config.Workspace, _config.Repository, cleanBranchName, hasMorePages);
 
                 return new PagedBitbucketCommitsResponse
                 {
@@ -145,15 +248,15 @@ public class BitbucketService : IBitbucketService
             catch (HttpRequestException ex)
             {
                 _logger.LogError(ex,
-                    "HTTP error fetching commits for {Workspace}/{Repo}/branch/{Branch}: {StatusCode}",
-                    _config.Workspace, _config.Repository, branchName, ex.StatusCode);
+                    "[DIAGNOSTIC] Final HttpRequestException caught for {Workspace}/{Repo}/branch/{Branch}: {StatusCode}",
+                    _config.Workspace, _config.Repository, cleanBranchName, ex.StatusCode);
                 throw;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex,
-                    "Error fetching commits for {Workspace}/{Repo}/branch/{Branch}",
-                    _config.Workspace, _config.Repository, branchName);
+                    "[DIAGNOSTIC] Unexpected exception while fetching commits for {Workspace}/{Repo}/branch/{Branch}",
+                    _config.Workspace, _config.Repository, cleanBranchName);
                 throw;
             }
         }) ?? new PagedBitbucketCommitsResponse();
