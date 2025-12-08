@@ -74,12 +74,24 @@ public class BitbucketService : IBitbucketService
                 "Fetching commits from Bitbucket for {Workspace}/{Repo}/branch/{Branch} (maxPages: {MaxPages}, pageLength: {PageLength})",
                 _config.Workspace, _config.Repository, branchName, maxPages, pageLength);
 
-            // ====== ENHANCED DIAGNOSTIC LOGGING ======
+            // ====== CRITICAL FIX: Decode if already encoded ======
             _logger.LogInformation(
-                "[DIAGNOSTIC] Raw branch name received: '{BranchName}' (Length: {Length}, Has refs/heads/: {HasRefsHeads})",
+                "[DIAGNOSTIC] Raw branch name received: '{BranchName}' (Length: {Length}, Contains %2F: {ContainsEncoded})",
                 branchName,
                 branchName?.Length ?? 0,
-                branchName?.StartsWith("refs/heads/") ?? false);
+                branchName?.Contains("%2F", StringComparison.OrdinalIgnoreCase) ?? false);
+
+            // If the branch name contains %2F, it's already encoded - decode it first
+            if (branchName.Contains("%2F", StringComparison.OrdinalIgnoreCase) ||
+                branchName.Contains("%", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogInformation(
+                    "[DIAGNOSTIC] Branch name appears to be URL-encoded. Decoding first...");
+                branchName = Uri.UnescapeDataString(branchName);
+                _logger.LogInformation(
+                    "[DIAGNOSTIC] Decoded branch name: '{DecodedBranch}'",
+                    branchName);
+            }
 
             var allCommits = new List<BitbucketCommit>();
             var pagesFetched = 0;
