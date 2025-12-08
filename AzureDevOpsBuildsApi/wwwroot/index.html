@@ -133,6 +133,52 @@
         .no-select-propagation {
             pointer-events: auto;
         }
+        /* New styles for build comparison */
+        .selectable-build {
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+            .selectable-build:hover {
+                background-color: #eff6ff !important;
+                box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+            }
+
+            .selectable-build.selected {
+                background-color: #dbeafe !important;
+                border: 2px solid #3b82f6 !important;
+                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+            }
+
+        .build-comparison-badge {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            z-index: 10;
+            pointer-events: none;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .compare-mode-active {
+            animation: pulse-border 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-border {
+            0%, 100% {
+                border-color: #8b5cf6;
+            }
+
+            50% {
+                border-color: #c084fc;
+            }
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -432,6 +478,11 @@
         let allDeployments = [];
         let allComparisonCommits = []; // Store all commits for filtering
 
+        // Build comparison mode (within environment)
+        let isBuildCompareMode = false;
+        let selectedBuilds = [];
+        let currentEnvironmentForComparison = null;
+
         // Format date
         function formatDate(dateString) {
             if (!dateString) return 'N/A';
@@ -671,6 +722,245 @@
             // Clear search
             clearComparisonSearch();
             allComparisonCommits = [];
+        }
+
+        // Compare historical build with current deployment
+        function compareWithCurrentBuild(historicalSourceVersion, historicalBuildNumber, currentSourceVersion, currentBuildNumber, environmentName) {
+            // Create deployment-like objects for the comparison
+            const older = {
+                environmentName: environmentName,
+                buildSourceVersion: historicalSourceVersion,
+                buildNumber: historicalBuildNumber
+            };
+
+            const newer = {
+                environmentName: environmentName + ' (Current)',
+                buildSourceVersion: currentSourceVersion,
+                buildNumber: currentBuildNumber
+            };
+
+            openComparisonModal(older, newer);
+        }
+
+        // Enter build comparison mode for an environment
+        function enterBuildCompareMode(environmentId, environmentName) {
+            // Reset state
+            isBuildCompareMode = true;
+            selectedBuilds = [];
+            currentEnvironmentForComparison = environmentId;
+
+            const card = document.getElementById(`deployment-card-${environmentId}`);
+            if (!card) return;
+
+            // Add visual indicator to environment card
+            card.classList.add('compare-mode-active');
+            card.style.border = '3px solid #8b5cf6';
+            card.style.boxShadow = '0 0 0 4px rgba(139, 92, 246, 0.1)';
+
+            // Hide the compare button
+            const compareBtn = document.getElementById(`compare-builds-btn-${environmentId}`);
+            if (compareBtn) compareBtn.style.display = 'none';
+
+            // Add banner at top of card
+            const cardContent = card.querySelector('.p-6');
+            if (cardContent) {
+                const banner = document.createElement('div');
+                banner.id = `compare-banner-${environmentId}`;
+                banner.className = 'bg-gradient-to-r from-purple-600 to-blue-600 text-white p-4 rounded-lg mb-4 shadow-lg';
+                banner.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <div class="flex-1">
+                                <div class="font-bold text-lg mb-1">🔍 Build Comparison Mode - ${environmentName}</div>
+                                <div class="text-sm" id="compare-status-${environmentId}">Click on any 2 builds to compare their commits</div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button id="compare-execute-${environmentId}"
+                                        onclick="performBuildComparison()"
+                                        disabled
+                                        class="bg-white text-purple-600 px-6 py-2 rounded-lg font-bold hover:bg-purple-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
+                                    <i class="fas fa-random mr-2"></i>Compare
+                                </button>
+                                <button onclick="exitBuildCompareMode(${environmentId})"
+                                        class="bg-red-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-red-600 transition-all shadow-md">
+                                    <i class="fas fa-times mr-2"></i>Cancel
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                cardContent.insertBefore(banner, cardContent.firstChild);
+            }
+
+            // Make all builds in this environment selectable
+            const buildBlocks = card.querySelectorAll('.build-block');
+            buildBlocks.forEach(block => {
+                block.classList.add('selectable-build');
+                block.style.cursor = 'pointer';
+
+                // Add click handler
+                block.addEventListener('click', handleBuildBlockClick);
+            });
+        }
+
+        // Handle build block click
+        function handleBuildBlockClick(event) {
+            if (!isBuildCompareMode) return;
+
+            // Check if clicking on a link or button
+            if (event.target.closest('.no-select-propagation') ||
+                event.target.closest('a') ||
+                event.target.closest('button')) {
+                return;
+            }
+
+            const buildBlock = event.currentTarget;
+            const environmentId = parseInt(buildBlock.dataset.environmentId);
+
+            // Only allow selection within current environment
+            if (environmentId !== currentEnvironmentForComparison) return;
+
+            const buildInfo = {
+                environmentId: environmentId,
+                buildId: buildBlock.dataset.buildId,
+                sourceVersion: buildBlock.dataset.sourceVersion,
+                buildNumber: buildBlock.dataset.buildNumber,
+                branch: buildBlock.dataset.branch,
+                element: buildBlock
+            };
+
+            // Check if already selected
+            const existingIndex = selectedBuilds.findIndex(b => b.buildId === buildInfo.buildId);
+
+            if (existingIndex >= 0) {
+                // Deselect
+                selectedBuilds.splice(existingIndex, 1);
+                buildBlock.classList.remove('selected');
+                buildBlock.style.backgroundColor = '';
+                buildBlock.style.borderColor = '';
+                const badge = buildBlock.querySelector('.build-selection-badge');
+                if (badge) badge.remove();
+            } else {
+                // Select (max 2)
+                if (selectedBuilds.length >= 2) {
+                    // Show friendly message
+                    const status = document.getElementById(`compare-status-${currentEnvironmentForComparison}`);
+                    if (status) {
+                        status.textContent = '⚠️ Already selected 2 builds. Deselect one first to select a different build.';
+                        status.style.color = '#fbbf24';
+                        setTimeout(() => {
+                            updateBuildCompareStatus();
+                        }, 2000);
+                    }
+                    return;
+                }
+
+                selectedBuilds.push(buildInfo);
+                buildBlock.classList.add('selected');
+
+                // Add visual feedback
+                const badge = document.createElement('div');
+                badge.className = 'build-selection-badge';
+                badge.textContent = selectedBuilds.length === 1 ? 'Build 1' : 'Build 2';
+                buildBlock.appendChild(badge);
+            }
+
+            // Update status
+            updateBuildCompareStatus();
+        }
+
+        // Update build comparison status
+        function updateBuildCompareStatus() {
+            const btn = document.getElementById(`compare-execute-${currentEnvironmentForComparison}`);
+            const status = document.getElementById(`compare-status-${currentEnvironmentForComparison}`);
+
+            if (!btn || !status) return;
+
+            status.style.color = 'white';
+
+            if (selectedBuilds.length === 0) {
+                status.textContent = 'Click on any 2 builds to compare their commits';
+                btn.disabled = true;
+            } else if (selectedBuilds.length === 1) {
+                status.textContent = `✓ Selected: ${selectedBuilds[0].buildNumber} - Select one more build`;
+                btn.disabled = true;
+            } else {
+                status.textContent = `✅ Ready! Comparing: ${selectedBuilds[0].buildNumber} ↔ ${selectedBuilds[1].buildNumber}`;
+                btn.disabled = false;
+            }
+        }
+
+        // Exit build comparison mode
+        function exitBuildCompareMode(environmentId) {
+            isBuildCompareMode = false;
+            selectedBuilds = [];
+            currentEnvironmentForComparison = null;
+
+            const card = document.getElementById(`deployment-card-${environmentId}`);
+            if (!card) return;
+
+            // Remove visual indicators
+            card.classList.remove('compare-mode-active');
+            card.style.border = '';
+            card.style.boxShadow = '';
+
+            // Remove banner
+            const banner = document.getElementById(`compare-banner-${environmentId}`);
+            if (banner) banner.remove();
+
+            // Show compare button again
+            const compareBtn = document.getElementById(`compare-builds-btn-${environmentId}`);
+            if (compareBtn) compareBtn.style.display = '';
+
+            // Remove selection from all builds
+            const buildBlocks = card.querySelectorAll('.build-block');
+            buildBlocks.forEach(block => {
+                block.classList.remove('selectable-build', 'selected');
+                block.style.cursor = '';
+                block.style.backgroundColor = '';
+                block.style.borderColor = '';
+                block.removeEventListener('click', handleBuildBlockClick);
+                const badge = block.querySelector('.build-selection-badge');
+                if (badge) badge.remove();
+            });
+        }
+
+        // Perform build comparison
+        async function performBuildComparison() {
+            if (selectedBuilds.length !== 2) {
+                alert('Please select exactly 2 builds to compare');
+                return;
+            }
+
+            const build1 = selectedBuilds[0];
+            const build2 = selectedBuilds[1];
+
+            // Determine which is older by build number
+            const build1Num = parseInt(build1.buildNumber.replace(/\D/g, ''));
+            const build2Num = parseInt(build2.buildNumber.replace(/\D/g, ''));
+
+            const older = build1Num < build2Num ? build1 : build2;
+            const newer = build1Num < build2Num ? build2 : build1;
+
+            // Get environment name
+            const envName = allDeployments.find(d => d.environmentId === older.environmentId)?.environmentName || 'Environment';
+
+            // Create deployment-like objects for the existing modal
+            const olderDeployment = {
+                environmentName: envName,
+                buildSourceVersion: older.sourceVersion,
+                buildNumber: older.buildNumber
+            };
+
+            const newerDeployment = {
+                environmentName: envName,
+                buildSourceVersion: newer.sourceVersion,
+                buildNumber: newer.buildNumber
+            };
+
+            // Open comparison modal
+            await openComparisonModal(olderDeployment, newerDeployment);
+
+            // Exit compare mode after opening modal
+            exitBuildCompareMode(currentEnvironmentForComparison);
         }
 
         // Filter comparison commits based on search input
@@ -962,7 +1252,7 @@
 
                 if (branchesCache[definitionId]) {
                     const branches = branchesCache[definitionId];
-                    branchesContent.innerHTML = createBranchesHTML(branches);
+                    branchesContent.innerHTML = createBranchesHTML(branches, environmentId);
                     if (branches && branches.length > 0) {
                         branchesCount.textContent = `(${branches.length})`;
                     }
@@ -972,7 +1262,7 @@
                     try {
                         const branches = await loadBranches(definitionId);
                         branchesCache[definitionId] = branches;
-                        branchesContent.innerHTML = createBranchesHTML(branches);
+                        branchesContent.innerHTML = createBranchesHTML(branches, environmentId);
                         if (branches && branches.length > 0) {
                             branchesCount.textContent = `(${branches.length})`;
                         }
@@ -1005,7 +1295,7 @@
         }
 
         // Create branches HTML
-        function createBranchesHTML(branches) {
+        function createBranchesHTML(branches, environmentId) {
             if (!branches || branches.length === 0) {
                 return `
                         <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
@@ -1017,17 +1307,17 @@
 
             return `
                     <div class="space-y-3">
-                        ${branches.map(branch => createBranchItem(branch)).join('')}
+                        ${branches.map(branch => createBranchItem(branch, environmentId)).join('')}
                     </div>
                 `;
         }
 
         // Create branch item
-        function createBranchItem(branch) {
+        function createBranchItem(branch, environmentId) {
             const buildNumberHtml = branch.latestBuildId && branch.latestBuildNumber
                 ? `<a href="https://dev.azure.com/${escapeHtml(ORGANIZATION_NAME)}/${escapeHtml(PROJECT_NAME)}/_build/results?buildId=${branch.latestBuildId}&view=results"
                         target="_blank" rel="noopener noreferrer"
-                        class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
+                        class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center no-select-propagation">
                         ${escapeHtml(branch.latestBuildNumber)}
                         <i class="fas fa-external-link-alt ml-2 text-xs"></i>
                     </a>`
@@ -1040,12 +1330,12 @@
                         <div class="flex items-center gap-2">
                             <a href="https://bitbucket.org/Optalitix/optalitix.framework/commits/${escapeHtml(branch.latestBuildSourceVersion)}"
                                 target="_blank" rel="noopener noreferrer"
-                                class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
+                                class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center no-select-propagation">
                                 ${escapeHtml(branch.latestBuildSourceVersion.substring(0, 7))}
                                 <i class="fas fa-external-link-alt ml-2 text-xs"></i>
                             </a>
                             <button id="${copyButtonId}" onclick="copyToClipboard('${escapeHtml(branch.latestBuildSourceVersion)}', '${copyButtonId}')"
-                                    class="text-gray-500 hover:text-gray-700 transition-colors" title="Copy full version">
+                                    class="text-gray-500 hover:text-gray-700 transition-colors no-select-propagation" title="Copy full version">
                                 <i class="fas fa-copy text-xs"></i>
                             </button>
                         </div>`;
@@ -1054,23 +1344,31 @@
             }
 
             return `
-                    <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                            <div>
-                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Number</p>
-                                ${buildNumberHtml}
-                            </div>
-                            <div>
-                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch Name</p>
-                                <div>${createBranchLink(branch.branchName, true)}</div>
-                            </div>
-                            <div>
-                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
-                                ${sourceVersionHtml}
-                            </div>
-                            <div>
-                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Date</p>
-                                <span class="text-sm text-gray-700">${formatDate(branch.latestBuildStartTime)}</span>
+                    <div id="build-branch-${branch.latestBuildId}"
+                         class="build-block"
+                         data-environment-id="${environmentId}"
+                         data-build-id="${branch.latestBuildId}"
+                         data-source-version="${branch.latestBuildSourceVersion}"
+                         data-build-number="${branch.latestBuildNumber}"
+                         data-branch="${branch.branchName}">
+                        <div class="bg-gray-50 rounded-lg p-4 border-2 border-gray-200 hover:shadow-md transition-all">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                <div>
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Number</p>
+                                    ${buildNumberHtml}
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch Name</p>
+                                    <div class="no-select-propagation">${createBranchLink(branch.branchName, true)}</div>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
+                                    ${sourceVersionHtml}
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Date</p>
+                                    <span class="text-sm text-gray-700">${formatDate(branch.latestBuildStartTime)}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1095,11 +1393,11 @@
         }
 
         // Create historical deployment item (compact version)
-        function createHistoricalDeploymentItem(deployment) {
+        function createHistoricalDeploymentItem(deployment, currentDeployment) {
             const buildNumberHtml = deployment.buildId && deployment.buildNumber
                 ? `<a href="https://dev.azure.com/${escapeHtml(ORGANIZATION_NAME)}/${escapeHtml(PROJECT_NAME)}/_build/results?buildId=${deployment.buildId}&view=results"
                         target="_blank" rel="noopener noreferrer"
-                        class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
+                        class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center no-select-propagation">
                         ${escapeHtml(deployment.buildNumber)}
                         <i class="fas fa-external-link-alt ml-2 text-xs"></i>
                     </a>`
@@ -1112,12 +1410,12 @@
                         <div class="flex items-center gap-2">
                             <a href="https://bitbucket.org/Optalitix/optalitix.framework/commits/${escapeHtml(deployment.buildSourceVersion)}"
                                 target="_blank" rel="noopener noreferrer"
-                                class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center">
+                                class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center no-select-propagation">
                                 ${escapeHtml(deployment.buildSourceVersion.substring(0, 7))}
                                 <i class="fas fa-external-link-alt ml-2 text-xs"></i>
                             </a>
                             <button id="${copyButtonId}" onclick="copyToClipboard('${escapeHtml(deployment.buildSourceVersion)}', '${copyButtonId}')"
-                                    class="text-gray-500 hover:text-gray-700 transition-colors" title="Copy full version">
+                                    class="text-gray-500 hover:text-gray-700 transition-colors no-select-propagation" title="Copy full version">
                                 <i class="fas fa-copy text-xs"></i>
                             </button>
                         </div>`;
@@ -1129,27 +1427,35 @@
             }
 
             return `
-                    <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                        <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
-                            <div>
-                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Number</p>
-                                ${buildNumberHtml}
-                            </div>
-                            <div>
-                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch</p>
-                                <div>${createBranchLink(deployment.buildSourceBranch, true)}</div>
-                            </div>
-                            <div>
-                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
-                                ${sourceVersionHtml}
-                            </div>
-                            <div>
-                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Deployment Date</p>
-                                <span class="text-sm text-gray-700">${formatDate(deployment.deploymentRecordFinishTime)}</span>
-                            </div>
-                            <div>
-                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Date</p>
-                                <span class="text-sm text-gray-700">${formatDate(deployment.buildStartTime)}</span>
+                    <div id="build-hist-${deployment.deploymentRecordId}"
+                         class="build-block"
+                         data-environment-id="${currentDeployment.environmentId}"
+                         data-build-id="${deployment.buildId}"
+                         data-source-version="${deployment.buildSourceVersion}"
+                         data-build-number="${deployment.buildNumber}"
+                         data-branch="${deployment.buildSourceBranch}">
+                        <div class="bg-gray-50 rounded-lg p-4 border-2 border-gray-200 hover:shadow-md transition-all">
+                            <div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-center">
+                                <div>
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Number</p>
+                                    ${buildNumberHtml}
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch</p>
+                                    <div class="no-select-propagation">${createBranchLink(deployment.buildSourceBranch, true)}</div>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
+                                    ${sourceVersionHtml}
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Deployment Date</p>
+                                    <span class="text-sm text-gray-700">${formatDate(deployment.deploymentRecordFinishTime)}</span>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Date</p>
+                                    <span class="text-sm text-gray-700">${formatDate(deployment.buildStartTime)}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1356,7 +1662,7 @@
                             </button>
                             <div id="historical-accordion-${deployment.environmentId}" class="historical-accordion-content mt-4">
                                 <div class="space-y-3">
-                                    ${validHistoricalDeployments.map(histDep => createHistoricalDeploymentItem(histDep)).join('')}
+                                    ${validHistoricalDeployments.map(histDep => createHistoricalDeploymentItem(histDep, deployment)).join('')}
                                 </div>
                             </div>
                         </div>
@@ -1371,31 +1677,49 @@
                          style="position: relative;">
                         <div class="p-6">
                             <div class="mb-6 pb-4 border-b-2 border-gray-200">
-                                ${envNameHtml}
+                                <div class="flex justify-between items-start">
+                                    <div class="flex-1">
+                                        ${envNameHtml}
+                                    </div>
+                                    <button onclick="enterBuildCompareMode(${deployment.environmentId}, '${escapeHtml(deployment.environmentName)}')"
+                                            id="compare-builds-btn-${deployment.environmentId}"
+                                            class="ml-4 px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all text-sm font-semibold shadow-md flex items-center gap-2">
+                                        <i class="fas fa-code-compare"></i>
+                                        Compare Builds
+                                    </button>
+                                </div>
                             </div>
 
                             <div class="mb-6 pb-4 border-b border-gray-200">
-                                <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                                    <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
-                                        <div>
-                                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Number</p>
-                                            ${buildNumberHtml}
-                                        </div>
-                                        <div>
-                                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch</p>
-                                            <div>${createBranchLink(deployment.buildSourceBranch, true)}</div>
-                                        </div>
-                                        <div>
-                                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
-                                            ${sourceVersionHtml}
-                                        </div>
-                                        <div>
-                                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Deployment Date</p>
-                                            <span class="text-sm text-gray-700">${formatDate(deployment.deploymentRecordFinishTime)}</span>
-                                        </div>
-                                        <div>
-                                            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Date</p>
-                                            <span class="text-sm text-gray-700">${formatDate(deployment.buildStartTime)}</span>
+                                <div id="build-current-${deployment.environmentId}"
+                                     class="build-block"
+                                     data-environment-id="${deployment.environmentId}"
+                                     data-build-id="${deployment.buildId}"
+                                     data-source-version="${deployment.buildSourceVersion}"
+                                     data-build-number="${deployment.buildNumber}"
+                                     data-branch="${deployment.buildSourceBranch}">
+                                    <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                        <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+                                            <div>
+                                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Number</p>
+                                                ${buildNumberHtml}
+                                            </div>
+                                            <div>
+                                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch</p>
+                                                <div>${createBranchLink(deployment.buildSourceBranch, true)}</div>
+                                            </div>
+                                            <div>
+                                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Source Version</p>
+                                                ${sourceVersionHtml}
+                                            </div>
+                                            <div>
+                                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Deployment Date</p>
+                                                <span class="text-sm text-gray-700">${formatDate(deployment.deploymentRecordFinishTime)}</span>
+                                            </div>
+                                            <div>
+                                                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Date</p>
+                                                <span class="text-sm text-gray-700">${formatDate(deployment.buildStartTime)}</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
