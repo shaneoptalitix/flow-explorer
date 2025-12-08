@@ -562,9 +562,27 @@
 
     <script src="js/config.js"></script>
     <script>
-        // Configuration - Update these values
-        //const API_BASE_URL = 'https://localhost:8443'; // when local
-        const API_BASE_URL = 'https://azuredevopsbuildsapi-cdadgzh8cwesccgx.uksouth-01.azurewebsites.net'; // when publishing
+        // Configuration - Dynamically determine API base URL from browser location
+        const API_BASE_URL = (() => {
+            const protocol = window.location.protocol; // 'http:' or 'https:'
+            const hostname = window.location.hostname; // e.g., 'localhost' or 'azuredevopsbuildsapi-cdadgzh8cwesccgx.uksouth-01.azurewebsites.net'
+            const port = window.location.port; // e.g., '8443' or '' (empty for standard ports)
+
+            // For localhost, check if we're on a non-standard port and use 8443 for API
+            if (hostname === 'localhost' || hostname === '127.0.0.1') {
+                // If viewing on localhost:8080 or similar, API is typically on 8443
+                return `${protocol}//${hostname}:8443`;
+            }
+
+            // For production/deployed environments, use same origin (same hostname)
+            if (port) {
+                return `${protocol}//${hostname}:${port}`;
+            }
+
+            return `${protocol}//${hostname}`;
+        })();
+
+        console.log('API Base URL:', API_BASE_URL); // Helpful for debugging
         const ORGANIZATION_NAME = 'OptalitixLimited';
         const PROJECT_NAME = 'Flow';
 
