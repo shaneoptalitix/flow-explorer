@@ -9,5 +9,9 @@ public interface IBitbucketService
         int pageLength = 30,
         int maxPages = 10);
 
+    Task<CommitComparisonResponse> GetCommitDifferenceAsync(
+        string fromCommit,
+        string toCommit);
+
     bool ClearCache();
 }
