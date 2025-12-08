@@ -179,6 +179,114 @@
                 border-color: #c084fc;
             }
         }
+
+        /* Selection checkbox for build blocks */
+        .build-selection-checkbox {
+            position: absolute;
+            left: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 10;
+            pointer-events: auto;
+            cursor: pointer;
+        }
+
+        .selection-checkbox-inner {
+            background: white;
+            border: 2px solid #9ca3af;
+            border-radius: 6px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s;
+        }
+
+        /* Add padding to inner content when checkbox is present */
+        .selectable-build .bg-blue-50,
+        .selectable-build .bg-gray-50 {
+            padding-left: 52px !important;
+        }
+
+        .selectable-build:hover .selection-checkbox-inner {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+
+        .selectable-build.selected .selection-checkbox-inner {
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            border-color: #3b82f6;
+        }
+
+        .build-selection-checkbox i {
+            font-size: 16px;
+            color: #9ca3af;
+            transition: all 0.2s;
+        }
+
+        .selectable-build:hover .build-selection-checkbox i {
+            color: #3b82f6;
+        }
+
+        .selectable-build.selected .build-selection-checkbox i {
+            color: white;
+        }
+
+        /* IMPROVED: Better build block interaction in comparison mode */
+        .build-block {
+            position: relative;
+        }
+
+            /* Create a clickable overlay that sits above content but below interactive elements */
+            .build-block.selectable-build::after {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                z-index: 1;
+                cursor: pointer;
+            }
+
+            /* Ensure all content stays below the overlay */
+            .build-block > div {
+                position: relative;
+                z-index: 0;
+            }
+
+            /* But interactive elements (links, buttons) go above the overlay */
+            .build-block.selectable-build .no-select-propagation,
+            .build-block.selectable-build a,
+            .build-block.selectable-build button {
+                position: relative;
+                z-index: 2;
+                pointer-events: auto;
+            }
+
+        /* Badge stays on top */
+        .build-selection-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            z-index: 10 !important;
+            pointer-events: none;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        /* Better hover effect with lift */
+        .build-block.selectable-build:hover {
+            transform: translateY(-2px);
+            transition: all 0.2s ease;
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -266,7 +374,7 @@
                     Apply Filters
                 </button>
                 <button onclick="enterCompareMode()" class="bg-purple-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-purple-700 transition-colors">
-                    <i class="fas fa-code-compare mr-2"></i>Compare Releases
+                    <i class="fas fa-code-compare mr-2"></i>Compare Environments
                 </button>
             </div>
         </div>
@@ -742,6 +850,38 @@
             openComparisonModal(older, newer);
         }
 
+        // Add checkboxes to newly revealed builds (when expanding sections in compare mode)
+        function addCheckboxesToBuilds(container, environmentId) {
+            if (!isBuildCompareMode || currentEnvironmentForComparison !== environmentId) {
+                return;
+            }
+
+            const buildBlocks = container.querySelectorAll('.build-block:not(.selectable-build)');
+            buildBlocks.forEach(block => {
+                block.classList.add('selectable-build');
+                block.style.cursor = 'pointer';
+
+                // Find the inner content div (bg-blue-50 or bg-gray-50)
+                const innerContent = block.querySelector('.bg-blue-50, .bg-gray-50');
+                if (innerContent && !innerContent.querySelector('.build-selection-checkbox')) {
+                    innerContent.style.position = 'relative';
+
+                    // Add selection checkbox overlay
+                    const checkbox = document.createElement('div');
+                    checkbox.className = 'build-selection-checkbox';
+                    checkbox.innerHTML = `
+                            <div class="selection-checkbox-inner">
+                                <i class="far fa-square"></i>
+                            </div>
+                        `;
+                    innerContent.insertBefore(checkbox, innerContent.firstChild);
+                }
+
+                // Add click handler
+                block.addEventListener('click', handleBuildBlockClick);
+            });
+        }
+
         // Enter build comparison mode for an environment
         function enterBuildCompareMode(environmentId, environmentName) {
             // Reset state
@@ -796,6 +936,22 @@
                 block.classList.add('selectable-build');
                 block.style.cursor = 'pointer';
 
+                // Find the inner content div (bg-blue-50 or bg-gray-50)
+                const innerContent = block.querySelector('.bg-blue-50, .bg-gray-50');
+                if (innerContent) {
+                    innerContent.style.position = 'relative';
+
+                    // Add selection checkbox overlay
+                    const checkbox = document.createElement('div');
+                    checkbox.className = 'build-selection-checkbox';
+                    checkbox.innerHTML = `
+                            <div class="selection-checkbox-inner">
+                                <i class="far fa-square"></i>
+                            </div>
+                        `;
+                    innerContent.insertBefore(checkbox, innerContent.firstChild);
+                }
+
                 // Add click handler
                 block.addEventListener('click', handleBuildBlockClick);
             });
@@ -805,12 +961,20 @@
         function handleBuildBlockClick(event) {
             if (!isBuildCompareMode) return;
 
-            // Check if clicking on a link or button
-            if (event.target.closest('.no-select-propagation') ||
-                event.target.closest('a') ||
-                event.target.closest('button')) {
+            // Allow clicks on the overlay (::after pseudo-element) or the build block itself
+            // But prevent clicks that originate from interactive elements
+            const clickedElement = event.target;
+
+            // If user clicked directly on a link or button, let it through
+            if (clickedElement.tagName === 'A' ||
+                clickedElement.tagName === 'BUTTON' ||
+                clickedElement.closest('a') ||
+                clickedElement.closest('button')) {
                 return;
             }
+
+            // Stop propagation to prevent other handlers
+            event.stopPropagation();
 
             const buildBlock = event.currentTarget;
             const environmentId = parseInt(buildBlock.dataset.environmentId);
@@ -836,6 +1000,13 @@
                 buildBlock.classList.remove('selected');
                 buildBlock.style.backgroundColor = '';
                 buildBlock.style.borderColor = '';
+
+                // Update checkbox
+                const checkbox = buildBlock.querySelector('.build-selection-checkbox i');
+                if (checkbox) {
+                    checkbox.className = 'far fa-square';
+                }
+
                 const badge = buildBlock.querySelector('.build-selection-badge');
                 if (badge) badge.remove();
             } else {
@@ -855,6 +1026,12 @@
 
                 selectedBuilds.push(buildInfo);
                 buildBlock.classList.add('selected');
+
+                // Update checkbox
+                const checkbox = buildBlock.querySelector('.build-selection-checkbox i');
+                if (checkbox) {
+                    checkbox.className = 'fas fa-check-square';
+                }
 
                 // Add visual feedback
                 const badge = document.createElement('div');
@@ -918,6 +1095,11 @@
                 block.style.backgroundColor = '';
                 block.style.borderColor = '';
                 block.removeEventListener('click', handleBuildBlockClick);
+
+                // Remove checkbox
+                const checkbox = block.querySelector('.build-selection-checkbox');
+                if (checkbox) checkbox.remove();
+
                 const badge = block.querySelector('.build-selection-badge');
                 if (badge) badge.remove();
             });
@@ -1226,6 +1408,9 @@
                 content.classList.add('active');
                 icon.classList.remove('fa-chevron-down');
                 icon.classList.add('fa-chevron-up');
+
+                // Add checkboxes if in comparison mode
+                addCheckboxesToBuilds(content, id);
             }
         }
 
@@ -1257,6 +1442,9 @@
                         branchesCount.textContent = `(${branches.length})`;
                     }
                     branchesLoadedForEnvironment[environmentId] = true;
+
+                    // Add checkboxes if in comparison mode
+                    addCheckboxesToBuilds(branchesContent, environmentId);
                 } else {
                     loadingIndicator.classList.remove('hidden');
                     try {
@@ -1267,6 +1455,9 @@
                             branchesCount.textContent = `(${branches.length})`;
                         }
                         branchesLoadedForEnvironment[environmentId] = true;
+
+                        // Add checkboxes if in comparison mode
+                        addCheckboxesToBuilds(branchesContent, environmentId);
                     } catch (error) {
                         branchesContent.innerHTML = `
                                 <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
