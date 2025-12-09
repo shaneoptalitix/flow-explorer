@@ -31,7 +31,7 @@ public class BitbucketController : ControllerBase
     /// <response code="400">Bad request - invalid parameters</response>
     /// <response code="404">Repository or branch not found</response>
     /// <response code="500">Internal server error</response>
-    [HttpGet("commits/{branchName}")]
+    [HttpGet("commits/{**branchName}")]
     [ProducesResponseType(typeof(PagedBitbucketCommitsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
