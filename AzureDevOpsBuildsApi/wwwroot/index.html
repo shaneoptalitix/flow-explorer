@@ -553,9 +553,14 @@
             </div>
             <div class="modal-footer">
                 <div id="comparisonCommitsInfo" class="text-sm text-gray-600"></div>
-                <button onclick="closeComparisonModal()" class="bg-gray-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-gray-700 transition-colors">
-                    Close
-                </button>
+                <div class="flex gap-3">
+                    <button id="downloadCsvBtn" onclick="downloadComparisonCsv()" class="hidden bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center">
+                        <i class="fas fa-download mr-2"></i>Download CSV
+                    </button>
+                    <button onclick="closeComparisonModal()" class="bg-gray-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-gray-700 transition-colors">
+                        Close
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -603,6 +608,8 @@
         let selectedDeployments = [];
         let allDeployments = [];
         let allComparisonCommits = []; // Store all commits for filtering
+        let comparisonMetadata = { fromEnv: '', toEnv: '', fromCommit: '', toCommit: '' }; // Store comparison metadata for CSV
+
 
         // Build comparison mode (within environment)
         let isBuildCompareMode = false;
@@ -620,6 +627,73 @@
                 hour: '2-digit',
                 minute: '2-digit'
             });
+        }
+
+        // Format date for CSV (ISO format)
+        function formatDateForCsv(dateString) {
+            if (!dateString) return '';
+            const date = new Date(dateString);
+            return date.toISOString();
+        }
+
+        // Escape CSV field
+        function escapeCsvField(field) {
+            if (field === null || field === undefined) return '';
+            const str = String(field);
+            // If field contains comma, newline, or quote, wrap in quotes and escape quotes
+            if (str.includes(',') || str.includes('\n') || str.includes('\r') || str.includes('"')) {
+                return '"' + str.replace(/"/g, '""') + '"';
+            }
+            return str;
+        }
+
+        // Download comparison commits as CSV
+        function downloadComparisonCsv() {
+            if (!allComparisonCommits || allComparisonCommits.length === 0) {
+                alert('No commits available to download.');
+                return;
+            }
+
+            // CSV headers
+            const headers = ['Commit ID', 'Short ID', 'Author', 'Author Username', 'Commit Date', 'Message', 'Commit URL'];
+
+            // Build CSV content
+            let csvContent = headers.join(',') + '\n';
+
+            allComparisonCommits.forEach(commit => {
+                const row = [
+                    escapeCsvField(commit.commitId),
+                    escapeCsvField(commit.shortCommitId),
+                    escapeCsvField(commit.author),
+                    escapeCsvField(commit.authorUsername),
+                    escapeCsvField(formatDateForCsv(commit.commitDate)),
+                    escapeCsvField(commit.message.replace(/\r?\n/g, ' ')), // Replace newlines with spaces
+                    escapeCsvField(commit.commitUrl)
+                ];
+                csvContent += row.join(',') + '\n';
+            });
+
+            // Create filename with comparison details
+            const fromLabel = comparisonMetadata.fromCommit ? comparisonMetadata.fromCommit.substring(0, 7) : 'unknown';
+            const toLabel = comparisonMetadata.toCommit ? comparisonMetadata.toCommit.substring(0, 7) : 'unknown';
+            const timestamp = new Date().toISOString().slice(0, 10);
+            const filename = `commits_${fromLabel}_to_${toLabel}_${timestamp}.csv`;
+
+            // Create and trigger download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+
+            if (navigator.msSaveBlob) {
+                // IE 10+
+                navigator.msSaveBlob(blob, filename);
+            } else {
+                link.href = URL.createObjectURL(blob);
+                link.setAttribute('download', filename);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(link.href);
+            }
         }
 
         // Escape HTML
@@ -772,6 +846,7 @@
             const infoSection = document.getElementById('comparisonInfo');
             const searchBox = document.getElementById('comparisonSearchBox');
             const noResultsDiv = document.getElementById('comparisonNoResults');
+            const downloadCsvBtn = document.getElementById('downloadCsvBtn');
 
             modal.classList.add('active');
             loadingState.classList.remove('hidden');
@@ -779,11 +854,20 @@
             infoSection.classList.add('hidden');
             searchBox.classList.add('hidden');
             noResultsDiv.classList.add('hidden');
+            downloadCsvBtn.classList.add('hidden');
             resultsContainer.innerHTML = '';
 
             // Clear previous search
             clearComparisonSearch();
             allComparisonCommits = [];
+
+            // Store comparison metadata for CSV filename
+            comparisonMetadata = {
+                fromEnv: fromDeployment.environmentName,
+                toEnv: toDeployment.environmentName,
+                fromCommit: fromDeployment.buildSourceVersion,
+                toCommit: toDeployment.buildSourceVersion
+            };
 
             document.getElementById('fromCommitInfo').textContent =
                 `${fromDeployment.environmentName} - ${fromDeployment.buildSourceVersion?.substring(0, 7)}`;
@@ -811,6 +895,7 @@
 
                     // Show search box
                     searchBox.classList.remove('hidden');
+                    downloadCsvBtn.classList.remove('hidden');
 
                     // Display all commits initially
                     resultsContainer.innerHTML = allComparisonCommits.map(commit => createCommitItem(commit)).join('');
@@ -848,6 +933,9 @@
             // Clear search
             clearComparisonSearch();
             allComparisonCommits = [];
+
+            // Hide download button
+            document.getElementById('downloadCsvBtn').classList.add('hidden');
         }
 
         // Compare historical build with current deployment
