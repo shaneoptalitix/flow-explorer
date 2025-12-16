@@ -1064,11 +1064,64 @@
         }
 
         // Handle build block click
+        // Debounce flag for build selection
+        let isBuildClickProcessing = false;
+
+        // Helper function to remove ALL badges from a build block
+        function removeAllBadgesFromBuild(buildBlock) {
+            if (!buildBlock) return;
+            const badges = buildBlock.querySelectorAll('.build-selection-badge');
+            badges.forEach(badge => badge.remove());
+        }
+
+        // Helper function to reset a build block's visual state
+        function resetBuildBlockState(buildBlock) {
+            if (!buildBlock) return;
+
+            buildBlock.classList.remove('selected');
+            buildBlock.style.backgroundColor = '';
+            buildBlock.style.borderColor = '';
+
+            // Update checkbox to unchecked
+            const checkbox = buildBlock.querySelector('.build-selection-checkbox i');
+            if (checkbox) {
+                checkbox.className = 'far fa-square';
+            }
+
+            // Remove ALL badges
+            removeAllBadgesFromBuild(buildBlock);
+        }
+
+        // Helper function to set a build block as selected
+        function setBuildBlockSelected(buildBlock, badgeNumber) {
+            if (!buildBlock) return;
+
+            buildBlock.classList.add('selected');
+
+            // Update checkbox to checked
+            const checkbox = buildBlock.querySelector('.build-selection-checkbox i');
+            if (checkbox) {
+                checkbox.className = 'fas fa-check-square';
+            }
+
+            // Remove any existing badges first, then add new one
+            removeAllBadgesFromBuild(buildBlock);
+
+            const badge = document.createElement('div');
+            badge.className = 'build-selection-badge';
+            badge.textContent = `Build ${badgeNumber}`;
+            buildBlock.appendChild(badge);
+        }
+
+        // Handle build block click
         function handleBuildBlockClick(event) {
             if (!isBuildCompareMode) return;
 
-            // Allow clicks on the overlay (::after pseudo-element) or the build block itself
-            // But prevent clicks that originate from interactive elements
+            // Debounce protection - prevent rapid clicks
+            if (isBuildClickProcessing) return;
+            isBuildClickProcessing = true;
+            setTimeout(() => { isBuildClickProcessing = false; }, 300);
+
             const clickedElement = event.target;
 
             // If user clicked directly on a link or button, let it through
@@ -1076,52 +1129,44 @@
                 clickedElement.tagName === 'BUTTON' ||
                 clickedElement.closest('a') ||
                 clickedElement.closest('button')) {
+                isBuildClickProcessing = false; // Reset debounce since we're not processing
                 return;
             }
 
             // Stop propagation to prevent other handlers
             event.stopPropagation();
+            event.preventDefault();
 
-            const buildBlock = event.currentTarget;
-            const environmentId = parseInt(buildBlock.dataset.environmentId);
+            const clickedBuildBlock = event.currentTarget;
+            const environmentId = parseInt(clickedBuildBlock.dataset.environmentId);
 
             // Only allow selection within current environment
-            if (environmentId !== currentEnvironmentForComparison) return;
+            if (environmentId !== currentEnvironmentForComparison) {
+                isBuildClickProcessing = false;
+                return;
+            }
 
-            const buildInfo = {
-                environmentId: environmentId,
-                buildId: buildBlock.dataset.buildId,
-                sourceVersion: buildBlock.dataset.sourceVersion,
-                buildNumber: buildBlock.dataset.buildNumber,
-                branch: buildBlock.dataset.branch,
-                element: buildBlock
-            };
+            const clickedBuildId = clickedBuildBlock.dataset.buildId;
 
-            // Check if already selected
-            const existingIndex = selectedBuilds.findIndex(b => b.buildId === buildInfo.buildId);
+            // Check if THIS EXACT ELEMENT is already selected (not just same buildId)
+            const existingIndex = selectedBuilds.findIndex(b => b.element === clickedBuildBlock);
 
             if (existingIndex >= 0) {
-                // Deselect
+                // Deselect THIS build block
+                const buildToRemove = selectedBuilds[existingIndex];
                 selectedBuilds.splice(existingIndex, 1);
-                buildBlock.classList.remove('selected');
-                buildBlock.style.backgroundColor = '';
-                buildBlock.style.borderColor = '';
 
-                // Update checkbox
-                const checkbox = buildBlock.querySelector('.build-selection-checkbox i');
-                if (checkbox) {
-                    checkbox.className = 'far fa-square';
-                }
+                // Reset the stored element (which should be the same as clicked)
+                resetBuildBlockState(buildToRemove.element);
 
-                const badge = buildBlock.querySelector('.build-selection-badge');
-                if (badge) badge.remove();
+                // Update remaining builds' badges to reflect new positions
+                updateAllBuildBadges();
             } else {
-                // Select (max 2)
+                // Check if we already have 2 builds selected
                 if (selectedBuilds.length >= 2) {
-                    // Show friendly message
                     const status = document.getElementById(`compare-status-${currentEnvironmentForComparison}`);
                     if (status) {
-                        status.textContent = '⚠️ Already selected 2 builds. Deselect one first to select a different build.';
+                        status.textContent = '⚠️ Already selected 2 builds. Deselect one first.';
                         status.style.color = '#fbbf24';
                         setTimeout(() => {
                             updateBuildCompareStatus();
@@ -1130,25 +1175,52 @@
                     return;
                 }
 
-                selectedBuilds.push(buildInfo);
-                buildBlock.classList.add('selected');
-
-                // Update checkbox
-                const checkbox = buildBlock.querySelector('.build-selection-checkbox i');
-                if (checkbox) {
-                    checkbox.className = 'fas fa-check-square';
+                // Check if a build with same buildId but different element is already selected
+                const sameBuildIdIndex = selectedBuilds.findIndex(b => b.buildId === clickedBuildId);
+                if (sameBuildIdIndex >= 0) {
+                    const status = document.getElementById(`compare-status-${currentEnvironmentForComparison}`);
+                    if (status) {
+                        status.textContent = '⚠️ This build is already selected (shown elsewhere).';
+                        status.style.color = '#fbbf24';
+                        setTimeout(() => {
+                            updateBuildCompareStatus();
+                        }, 2000);
+                    }
+                    return;
                 }
 
-                // Add visual feedback
-                const badge = document.createElement('div');
-                badge.className = 'build-selection-badge';
-                badge.textContent = selectedBuilds.length === 1 ? 'Build 1' : 'Build 2';
-                buildBlock.appendChild(badge);
+                // Select this build
+                const buildInfo = {
+                    environmentId: environmentId,
+                    buildId: clickedBuildId,
+                    sourceVersion: clickedBuildBlock.dataset.sourceVersion,
+                    buildNumber: clickedBuildBlock.dataset.buildNumber,
+                    branch: clickedBuildBlock.dataset.branch,
+                    element: clickedBuildBlock
+                };
+
+                selectedBuilds.push(buildInfo);
+                setBuildBlockSelected(clickedBuildBlock, selectedBuilds.length);
             }
 
             // Update status
             updateBuildCompareStatus();
         }
+
+        // Update all build badges to reflect current selection order
+        function updateAllBuildBadges() {
+            selectedBuilds.forEach((build, index) => {
+                if (build.element) {
+                    // Remove all badges and re-add with correct number
+                    removeAllBadgesFromBuild(build.element);
+
+                    const badge = document.createElement('div');
+                    badge.className = 'build-selection-badge';
+                    badge.textContent = `Build ${index + 1}`;
+                    build.element.appendChild(badge);
+                }
+            });
+        }  
 
         // Update build comparison status
         function updateBuildCompareStatus() {
