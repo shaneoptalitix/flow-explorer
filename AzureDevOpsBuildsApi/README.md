@@ -222,6 +222,8 @@ cd AzureDevOpsBuildsApi
 dotnet publish -c Release -o ./publish
 ```
 
+Make sure you copy the `AzureDevOps` and `BitBucket` appsettings connection information into the published folders `appsettings.json`.
+
 ### Step 4: Deploy Using Azure Extension
 
 1. **Open Azure Extension**:
