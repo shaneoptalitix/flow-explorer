@@ -615,6 +615,10 @@
         let isBuildCompareMode = false;
         let selectedBuilds = [];
         let currentEnvironmentForComparison = null;
+        let manualCommitIdMode = false;  // Track if manual commit ID mode is enabled
+        let manualCommitId = '';  // Store the first manual commit ID
+        let manualCommitId2Mode = false;  // Track if second manual commit ID mode is enabled
+        let manualCommitId2 = '';  // Store the second manual commit ID
 
         // Format date
         function formatDate(dateString) {
@@ -994,6 +998,10 @@
             isBuildCompareMode = true;
             selectedBuilds = [];
             currentEnvironmentForComparison = environmentId;
+            manualCommitIdMode = false;
+            manualCommitId = '';
+            manualCommitId2Mode = false;
+            manualCommitId2 = '';
 
             const card = document.getElementById(`deployment-card-${environmentId}`);
             if (!card) return;
@@ -1014,25 +1022,84 @@
                 banner.id = `compare-banner-${environmentId}`;
                 banner.className = 'bg-gradient-to-r from-purple-600 to-blue-600 text-white p-4 rounded-lg mb-4 shadow-lg';
                 banner.innerHTML = `
-                        <div class="flex justify-between items-center">
-                            <div class="flex-1">
-                                <div class="font-bold text-lg mb-1">🔍 Build Comparison Mode - ${environmentName}</div>
-                                <div class="text-sm" id="compare-status-${environmentId}">Click on any 2 builds to compare their commits</div>
-                            </div>
-                            <div class="flex gap-2">
-                                <button id="compare-execute-${environmentId}"
-                                        onclick="performBuildComparison()"
-                                        disabled
-                                        class="bg-white text-purple-600 px-6 py-2 rounded-lg font-bold hover:bg-purple-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
-                                    <i class="fas fa-random mr-2"></i>Compare
-                                </button>
-                                <button onclick="exitBuildCompareMode(${environmentId})"
-                                        class="bg-red-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-red-600 transition-all shadow-md">
-                                    <i class="fas fa-times mr-2"></i>Cancel
-                                </button>
+                    <div class="flex justify-between items-start gap-4">
+                        <div class="flex-1">
+                            <div class="font-bold text-lg mb-1">🔍 Build Comparison Mode - ${environmentName}</div>
+                            <div class="text-sm mb-3" id="compare-status-${environmentId}">Click on any 2 builds to compare their commits</div>
+                            
+                            <!-- Manual Commit ID Section -->
+                            <div class="bg-white bg-opacity-20 rounded-lg p-3 space-y-3">
+                                <!-- First Manual Commit -->
+                                <div>
+                                    <label class="flex items-center gap-2 cursor-pointer mb-2">
+                                        <input type="checkbox" 
+                                               id="manual-commit-checkbox-${environmentId}"
+                                               onchange="toggleManualCommitMode(${environmentId})"
+                                               class="w-4 h-4 rounded border-white focus:ring-2 focus:ring-white">
+                                        <span class="font-semibold text-sm">Manual commit ID #1</span>
+                                    </label>
+                                    <div id="manual-commit-container-${environmentId}" class="hidden">
+                                        <div class="flex gap-2 items-center">
+                                            <input type="text" 
+                                                   id="manual-commit-input-${environmentId}"
+                                                   placeholder="Enter first commit ID (full or short hash)..."
+                                                   class="flex-1 px-3 py-2 text-sm text-gray-800 rounded-lg border-2 border-white focus:ring-2 focus:ring-white focus:border-transparent"
+                                                   oninput="updateManualCommitId(${environmentId})">
+                                            <div class="text-xs bg-white bg-opacity-30 px-2 py-1 rounded whitespace-nowrap">
+                                                <i class="fas fa-info-circle mr-1"></i>
+                                                Commit ID #1
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Second Manual Commit -->
+                                <div>
+                                    <label class="flex items-center gap-2 cursor-pointer mb-2">
+                                        <input type="checkbox" 
+                                               id="manual-commit-checkbox2-${environmentId}"
+                                               onchange="toggleManualCommitMode2(${environmentId})"
+                                               class="w-4 h-4 rounded border-white focus:ring-2 focus:ring-white">
+                                        <span class="font-semibold text-sm">Manual commit ID #2</span>
+                                    </label>
+                                    <div id="manual-commit-container2-${environmentId}" class="hidden">
+                                        <div class="flex gap-2 items-center">
+                                            <input type="text" 
+                                                   id="manual-commit-input2-${environmentId}"
+                                                   placeholder="Enter second commit ID (full or short hash)..."
+                                                   class="flex-1 px-3 py-2 text-sm text-gray-800 rounded-lg border-2 border-white focus:ring-2 focus:ring-white focus:border-transparent"
+                                                   oninput="updateManualCommitId2(${environmentId})">
+                                            <div class="text-xs bg-white bg-opacity-30 px-2 py-1 rounded whitespace-nowrap">
+                                                <i class="fas fa-info-circle mr-1"></i>
+                                                Commit ID #2
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Helper text -->
+                                <div class="text-xs bg-white bg-opacity-10 px-3 py-2 rounded">
+                                    <i class="fas fa-lightbulb mr-1"></i>
+                                    <span id="manual-mode-helper-${environmentId}">
+                                        Select 2 builds from the list, or use manual commit IDs
+                                    </span>
+                                </div>
                             </div>
                         </div>
-                    `;
+                        <div class="flex flex-col gap-2">
+                            <button id="compare-execute-${environmentId}"
+                                    onclick="performBuildComparison()"
+                                    disabled
+                                    class="px-6 py-2 bg-white text-purple-600 rounded-lg font-bold hover:bg-purple-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md">
+                                <i class="fas fa-random mr-2"></i>Compare
+                            </button>
+                            <button onclick="exitBuildCompareMode(${environmentId})"
+                                    class="px-6 py-2 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition-all shadow-md">
+                                <i class="fas fa-times mr-2"></i>Cancel
+                            </button>
+                        </div>
+                    </div>
+                `;
                 cardContent.insertBefore(banner, cardContent.firstChild);
             }
 
@@ -1061,6 +1128,114 @@
                 // Add click handler
                 block.addEventListener('click', handleBuildBlockClick);
             });
+        }
+
+        // Toggle manual commit ID mode
+        function toggleManualCommitMode(environmentId) {
+            const checkbox = document.getElementById(`manual-commit-checkbox-${environmentId}`);
+            const container = document.getElementById(`manual-commit-container-${environmentId}`);
+            const input = document.getElementById(`manual-commit-input-${environmentId}`);
+            
+            manualCommitIdMode = checkbox.checked;
+            
+            if (manualCommitIdMode) {
+                container.classList.remove('hidden');
+                input.focus();
+                
+                // If both manual modes are enabled, clear build selections completely
+                if (manualCommitId2Mode) {
+                    selectedBuilds.forEach(build => {
+                        resetBuildBlockState(build.element);
+                    });
+                    selectedBuilds = [];
+                } else {
+                    // Clear any existing selections beyond 1
+                    if (selectedBuilds.length > 1) {
+                        const toRemove = selectedBuilds.slice(1);
+                        toRemove.forEach(build => {
+                            resetBuildBlockState(build.element);
+                        });
+                        selectedBuilds = selectedBuilds.slice(0, 1);
+                    }
+                }
+                updateAllBuildBadges();
+            } else {
+                container.classList.add('hidden');
+                manualCommitId = '';
+                input.value = '';
+            }
+            
+            updateBuildCompareStatus();
+            updateManualModeHelper(environmentId);
+        }
+
+        // Toggle second manual commit ID mode
+        function toggleManualCommitMode2(environmentId) {
+            const checkbox = document.getElementById(`manual-commit-checkbox2-${environmentId}`);
+            const container = document.getElementById(`manual-commit-container2-${environmentId}`);
+            const input = document.getElementById(`manual-commit-input2-${environmentId}`);
+            
+            manualCommitId2Mode = checkbox.checked;
+            
+            if (manualCommitId2Mode) {
+                container.classList.remove('hidden');
+                input.focus();
+                
+                // If both manual modes are enabled, clear all build selections
+                if (manualCommitIdMode) {
+                    selectedBuilds.forEach(build => {
+                        resetBuildBlockState(build.element);
+                    });
+                    selectedBuilds = [];
+                } else {
+                    // Clear any existing selections beyond 1
+                    if (selectedBuilds.length > 1) {
+                        const toRemove = selectedBuilds.slice(1);
+                        toRemove.forEach(build => {
+                            resetBuildBlockState(build.element);
+                        });
+                        selectedBuilds = selectedBuilds.slice(0, 1);
+                    }
+                }
+                updateAllBuildBadges();
+            } else {
+                container.classList.add('hidden');
+                manualCommitId2 = '';
+                input.value = '';
+            }
+            
+            updateBuildCompareStatus();
+            updateManualModeHelper(environmentId);
+        }
+
+        // Update manual commit ID from input
+        function updateManualCommitId(environmentId) {
+            const input = document.getElementById(`manual-commit-input-${environmentId}`);
+            manualCommitId = input.value.trim();
+            updateBuildCompareStatus();
+        }
+
+        // Update second manual commit ID from input
+        function updateManualCommitId2(environmentId) {
+            const input = document.getElementById(`manual-commit-input2-${environmentId}`);
+            manualCommitId2 = input.value.trim();
+            updateBuildCompareStatus();
+        }
+
+        // Update helper text based on mode
+        function updateManualModeHelper(environmentId) {
+            const helper = document.getElementById(`manual-mode-helper-${environmentId}`);
+            if (!helper) return;
+            
+            if (manualCommitIdMode && manualCommitId2Mode) {
+                helper.textContent = 'Both manual commit IDs mode: Enter 2 commit IDs to compare';
+            } else if (manualCommitIdMode) {
+                helper.textContent = 'Manual commit ID #1 mode: Enter commit ID and select 1 build';
+            } else if (manualCommitId2Mode) {
+                helper.textContent = 'Manual commit ID #2 mode: Select 1 build and enter commit ID';
+            } else {
+                helper.textContent = 'Select 2 builds from the list, or use manual commit IDs';
+            }
         }
 
         // Handle build block click
@@ -1129,7 +1304,7 @@
                 clickedElement.tagName === 'BUTTON' ||
                 clickedElement.closest('a') ||
                 clickedElement.closest('button')) {
-                isBuildClickProcessing = false; // Reset debounce since we're not processing
+                isBuildClickProcessing = false;
                 return;
             }
 
@@ -1148,25 +1323,43 @@
 
             const clickedBuildId = clickedBuildBlock.dataset.buildId;
 
-            // Check if THIS EXACT ELEMENT is already selected (not just same buildId)
+            // Check if THIS EXACT ELEMENT is already selected
             const existingIndex = selectedBuilds.findIndex(b => b.element === clickedBuildBlock);
 
             if (existingIndex >= 0) {
                 // Deselect THIS build block
                 const buildToRemove = selectedBuilds[existingIndex];
                 selectedBuilds.splice(existingIndex, 1);
-
-                // Reset the stored element (which should be the same as clicked)
                 resetBuildBlockState(buildToRemove.element);
-
-                // Update remaining builds' badges to reflect new positions
                 updateAllBuildBadges();
             } else {
-                // Check if we already have 2 builds selected
-                if (selectedBuilds.length >= 2) {
+                // Determine max selections based on mode
+                let maxSelections = 2;
+                if (manualCommitIdMode && manualCommitId2Mode) {
+                    maxSelections = 0; // No build selection allowed when both manual modes are on
+                } else if (manualCommitIdMode || manualCommitId2Mode) {
+                    maxSelections = 1; // Only 1 build when one manual mode is on
+                }
+                
+                if (maxSelections === 0) {
                     const status = document.getElementById(`compare-status-${currentEnvironmentForComparison}`);
                     if (status) {
-                        status.textContent = '⚠️ Already selected 2 builds. Deselect one first.';
+                        status.textContent = '⚠️ Both manual commit IDs mode: No build selection needed.';
+                        status.style.color = '#fbbf24';
+                        setTimeout(() => {
+                            updateBuildCompareStatus();
+                        }, 2000);
+                    }
+                    return;
+                }
+                
+                if (selectedBuilds.length >= maxSelections) {
+                    const status = document.getElementById(`compare-status-${currentEnvironmentForComparison}`);
+                    if (status) {
+                        const message = maxSelections === 1
+                            ? '⚠️ In manual commit mode, select only 1 build.'
+                            : '⚠️ Already selected 2 builds. Deselect one first.';
+                        status.textContent = message;
                         status.style.color = '#fbbf24';
                         setTimeout(() => {
                             updateBuildCompareStatus();
@@ -1231,6 +1424,70 @@
 
             status.style.color = 'white';
 
+            // Handle both manual commit IDs mode
+            if (manualCommitIdMode && manualCommitId2Mode) {
+                const hasCommitId1 = manualCommitId.length >= 7;
+                const hasCommitId2 = manualCommitId2.length >= 7;
+                
+                if (!hasCommitId1 && !hasCommitId2) {
+                    status.textContent = 'Enter both commit IDs to compare';
+                    btn.disabled = true;
+                } else if (!hasCommitId1) {
+                    status.textContent = `✓ Commit ID #2: ${manualCommitId2.substring(0, 7)} - Enter commit ID #1`;
+                    btn.disabled = true;
+                } else if (!hasCommitId2) {
+                    status.textContent = `✓ Commit ID #1: ${manualCommitId.substring(0, 7)} - Enter commit ID #2`;
+                    btn.disabled = true;
+                } else {
+                    status.textContent = `✅ Ready! Comparing: ${manualCommitId.substring(0, 7)} ↔ ${manualCommitId2.substring(0, 7)}`;
+                    btn.disabled = false;
+                }
+                return;
+            }
+
+            // Handle single manual commit ID mode
+            if (manualCommitIdMode) {
+                const hasCommitId = manualCommitId.length >= 7;
+                const hasOneBuild = selectedBuilds.length === 1;
+                
+                if (!hasCommitId && !hasOneBuild) {
+                    status.textContent = 'Enter commit ID #1 and select 1 build to compare';
+                    btn.disabled = true;
+                } else if (!hasCommitId) {
+                    status.textContent = `✓ Selected: ${selectedBuilds[0].buildNumber} - Enter commit ID #1`;
+                    btn.disabled = true;
+                } else if (!hasOneBuild) {
+                    status.textContent = `✓ Commit ID #1: ${manualCommitId.substring(0, 7)} - Select 1 build`;
+                    btn.disabled = true;
+                } else {
+                    status.textContent = `✅ Ready! Comparing: ${manualCommitId.substring(0, 7)} ↔ ${selectedBuilds[0].buildNumber}`;
+                    btn.disabled = false;
+                }
+                return;
+            }
+
+            // Handle second manual commit ID mode
+            if (manualCommitId2Mode) {
+                const hasCommitId = manualCommitId2.length >= 7;
+                const hasOneBuild = selectedBuilds.length === 1;
+                
+                if (!hasCommitId && !hasOneBuild) {
+                    status.textContent = 'Select 1 build and enter commit ID #2 to compare';
+                    btn.disabled = true;
+                } else if (!hasCommitId) {
+                    status.textContent = `✓ Selected: ${selectedBuilds[0].buildNumber} - Enter commit ID #2`;
+                    btn.disabled = true;
+                } else if (!hasOneBuild) {
+                    status.textContent = `✓ Commit ID #2: ${manualCommitId2.substring(0, 7)} - Select 1 build`;
+                    btn.disabled = true;
+                } else {
+                    status.textContent = `✅ Ready! Comparing: ${selectedBuilds[0].buildNumber} ↔ ${manualCommitId2.substring(0, 7)}`;
+                    btn.disabled = false;
+                }
+                return;
+            }
+
+            // Original behavior for normal mode (2 builds from UI)
             if (selectedBuilds.length === 0) {
                 status.textContent = 'Click on any 2 builds to compare their commits';
                 btn.disabled = true;
@@ -1248,6 +1505,10 @@
             isBuildCompareMode = false;
             selectedBuilds = [];
             currentEnvironmentForComparison = null;
+            manualCommitIdMode = false;
+            manualCommitId = '';
+            manualCommitId2Mode = false;
+            manualCommitId2 = '';
 
             const card = document.getElementById(`deployment-card-${environmentId}`);
             if (!card) return;
@@ -1285,6 +1546,85 @@
 
         // Perform build comparison
         async function performBuildComparison() {
+            const envName = allDeployments.find(d => d.environmentId === currentEnvironmentForComparison)?.environmentName || 'Environment';
+            
+            // Handle both manual commit IDs mode
+            if (manualCommitIdMode && manualCommitId2Mode) {
+                if (!manualCommitId || !manualCommitId2) {
+                    alert('Please enter both commit IDs to compare');
+                    return;
+                }
+                
+                const deployment1 = {
+                    environmentName: envName,
+                    buildSourceVersion: manualCommitId,
+                    buildNumber: manualCommitId.substring(0, 7)
+                };
+                
+                const deployment2 = {
+                    environmentName: envName,
+                    buildSourceVersion: manualCommitId2,
+                    buildNumber: manualCommitId2.substring(0, 7)
+                };
+                
+                await openComparisonModal(deployment1, deployment2);
+                exitBuildCompareMode(currentEnvironmentForComparison);
+                return;
+            }
+            
+            // Handle first manual commit ID mode
+            if (manualCommitIdMode) {
+                if (!manualCommitId || selectedBuilds.length !== 1) {
+                    alert('Please enter commit ID #1 and select 1 build to compare');
+                    return;
+                }
+                
+                const selectedBuild = selectedBuilds[0];
+                
+                const manualDeployment = {
+                    environmentName: envName,
+                    buildSourceVersion: manualCommitId,
+                    buildNumber: manualCommitId.substring(0, 7)
+                };
+                
+                const selectedDeployment = {
+                    environmentName: envName,
+                    buildSourceVersion: selectedBuild.sourceVersion,
+                    buildNumber: selectedBuild.buildNumber
+                };
+                
+                await openComparisonModal(manualDeployment, selectedDeployment);
+                exitBuildCompareMode(currentEnvironmentForComparison);
+                return;
+            }
+            
+            // Handle second manual commit ID mode
+            if (manualCommitId2Mode) {
+                if (!manualCommitId2 || selectedBuilds.length !== 1) {
+                    alert('Please select 1 build and enter commit ID #2 to compare');
+                    return;
+                }
+                
+                const selectedBuild = selectedBuilds[0];
+                
+                const selectedDeployment = {
+                    environmentName: envName,
+                    buildSourceVersion: selectedBuild.sourceVersion,
+                    buildNumber: selectedBuild.buildNumber
+                };
+                
+                const manualDeployment = {
+                    environmentName: envName,
+                    buildSourceVersion: manualCommitId2,
+                    buildNumber: manualCommitId2.substring(0, 7)
+                };
+                
+                await openComparisonModal(selectedDeployment, manualDeployment);
+                exitBuildCompareMode(currentEnvironmentForComparison);
+                return;
+            }
+            
+            // Original behavior for 2-build comparison
             if (selectedBuilds.length !== 2) {
                 alert('Please select exactly 2 builds to compare');
                 return;
@@ -1299,9 +1639,6 @@
 
             const older = build1Num < build2Num ? build1 : build2;
             const newer = build1Num < build2Num ? build2 : build1;
-
-            // Get environment name
-            const envName = allDeployments.find(d => d.environmentId === older.environmentId)?.environmentName || 'Environment';
 
             // Create deployment-like objects for the existing modal
             const olderDeployment = {
@@ -1902,15 +2239,17 @@
 
             // Build HTML for links
             if (links.length > 0) {
-                portalLinksHtml = '<div class="mt-3 flex flex-wrap gap-3">';
+                portalLinksHtml = '<div class="mt-2 flex flex-col gap-1">';
                 links.forEach(link => {
                     portalLinksHtml += `
-                            <a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer"
-                               class="inline-flex items-center px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 hover:text-blue-900 rounded-lg transition-colors text-sm font-medium">
-                                <i class="fas ${link.icon} mr-2"></i>
-                                ${escapeHtml(link.label)}
-                                <i class="fas fa-external-link-alt ml-2 text-xs"></i>
-                            </a>
+                            <div class="flex items-center">
+                                <span class="text-xs text-gray-500 mr-2">${escapeHtml(link.label)}:</span>
+                                <a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer"
+                                class="text-blue-600 hover:text-blue-800 text-xs font-mono hover:underline transition-colors">
+                                    ${escapeHtml(link.url)}
+                                    <i class="fas fa-external-link-alt ml-1 text-xs"></i>
+                                </a>
+                            </div>
                         `;
                 });
                 portalLinksHtml += '</div>';
