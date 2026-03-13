@@ -475,7 +475,7 @@ public class AzureDevOpsService : IAzureDevOpsService
             entry.Size = 10;
             _logger.LogInformation("Cache miss - fetching environments from Azure DevOps");
             
-            var url = $"_apis/distributedtask/environments?api-version={_config.ApiVersion}";
+            var url = $"_apis/distributedtask/environments?$top=200&api-version={_config.ApiVersion}";
             var response = await _httpClient.GetStringAsync(url);
             var environmentsResponse = JsonSerializer.Deserialize<EnvironmentsResponse>(response);
             return environmentsResponse?.Value ?? new List<Models.Environment>();
