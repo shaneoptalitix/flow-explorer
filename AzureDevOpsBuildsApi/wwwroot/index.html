@@ -391,7 +391,18 @@
                         <p class="text-2xl font-bold text-gray-800" id="totalCount">-</p>
                     </div>
                 </div>
-                <div class="text-sm text-gray-500" id="lastUpdated"></div>
+                <div class="flex items-center space-x-6">
+                    <div id="latestReleaseContainer" class="hidden flex items-center space-x-3">
+                        <div class="p-3 bg-green-100 rounded-lg">
+                            <i class="fas fa-code-branch text-green-600 text-2xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">Latest Release Branch</p>
+                            <p class="text-2xl font-bold text-green-700" id="latestReleaseVersion">-</p>
+                        </div>
+                    </div>
+                    <div class="text-sm text-gray-500" id="lastUpdated"></div>
+                </div>
             </div>
         </div>
 
@@ -2514,6 +2525,54 @@
             loadDeployments();
         }
 
+        // Find the latest release branch version from deployments
+        function findLatestReleaseBranch(deployments) {
+            if (!deployments || deployments.length === 0) return null;
+
+            const releaseBranches = [];
+
+            for (const dep of deployments) {
+                if (dep.buildSourceBranch && dep.buildSourceBranch.includes('/release/')) {
+                    releaseBranches.push({
+                        branch: dep.buildSourceBranch,
+                        finishTime: dep.deploymentRecordFinishTime
+                    });
+                }
+                // Also check historical deployments
+                if (dep.historicalDeployments) {
+                    for (const hist of dep.historicalDeployments) {
+                        if (hist.buildSourceBranch && hist.buildSourceBranch.includes('/release/')) {
+                            releaseBranches.push({
+                                branch: hist.buildSourceBranch,
+                                finishTime: hist.deploymentRecordFinishTime
+                            });
+                        }
+                    }
+                }
+            }
+
+            if (releaseBranches.length === 0) return null;
+
+            // Sort by version number (semver-aware), falling back to most recent deployment
+            releaseBranches.sort((a, b) => {
+                const versionA = a.branch.replace(/^.*\/release\//, '');
+                const versionB = b.branch.replace(/^.*\/release\//, '');
+                const partsA = versionA.split('.').map(Number);
+                const partsB = versionB.split('.').map(Number);
+
+                for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+                    const numA = partsA[i] || 0;
+                    const numB = partsB[i] || 0;
+                    if (numA !== numB) return numB - numA; // Descending
+                }
+                // If versions are equal, prefer the most recent deployment
+                return new Date(b.finishTime) - new Date(a.finishTime);
+            });
+
+            // Return clean version string (e.g. "1.2.3" from "refs/heads/release/1.2.3")
+            return releaseBranches[0].branch.replace(/^.*\/release\//, '');
+        }        
+
         // Load deployments
         async function loadDeployments() {
             const environmentFilter = document.getElementById('environmentFilter').value;
@@ -2554,6 +2613,18 @@
 
                 document.getElementById('totalCount').textContent = data.totalCount;
                 document.getElementById('lastUpdated').textContent = `Updated: ${formatDate(new Date())}`;
+
+                // Find and display the latest release branch version
+                const latestReleaseBranch = findLatestReleaseBranch(data.data);
+                const releaseContainer = document.getElementById('latestReleaseContainer');
+                if (latestReleaseBranch) {
+                    document.getElementById('latestReleaseVersion').textContent = latestReleaseBranch;
+                    releaseContainer.classList.remove('hidden');
+                    releaseContainer.classList.add('flex');
+                } else {
+                    releaseContainer.classList.add('hidden');
+                    releaseContainer.classList.remove('flex');
+                }
 
                 totalPages = data.totalPages;
 
