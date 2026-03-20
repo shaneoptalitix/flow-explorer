@@ -391,17 +391,19 @@
                         <p class="text-2xl font-bold text-gray-800" id="totalCount">-</p>
                     </div>
                 </div>
-                <div class="flex items-center space-x-6">
-                    <div id="latestReleaseContainer" class="hidden flex items-center space-x-3">
-                        <div class="p-3 bg-green-100 rounded-lg">
-                            <i class="fas fa-code-branch text-green-600 text-2xl"></i>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-600">Latest Release Branch</p>
-                            <p class="text-2xl font-bold text-green-700" id="latestReleaseVersion">-</p>
+                <div id="latestReleaseContainer" class="hidden flex items-center space-x-3">
+                    <div class="p-3 bg-green-100 rounded-lg">
+                        <i class="fas fa-code-branch text-green-600 text-2xl"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-600">Latest Release</p>
+                        <p class="text-lg font-bold text-green-700" id="latestReleaseVersion">-</p>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-mono text-green-600" id="latestReleaseBuildNumber">-</span>
+                            <span class="text-xs text-gray-400">|</span>
+                            <span class="text-xs text-gray-500 cursor-help" id="latestReleaseBuildAge"></span>
                         </div>
                     </div>
-                    <div class="text-sm text-gray-500" id="lastUpdated"></div>
                 </div>
             </div>
         </div>
@@ -643,6 +645,31 @@
                 minute: '2-digit'
             });
         }
+
+        // Format relative time ago
+        function timeAgo(dateString) {
+            if (!dateString) return '';
+            const now = new Date();
+            const date = new Date(dateString);
+            const seconds = Math.floor((now - date) / 1000);
+
+            if (seconds < 60) return 'just now';
+
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes}m ago`;
+
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours}h ago`;
+
+            const days = Math.floor(hours / 24);
+            if (days < 30) return `${days}d ago`;
+
+            const months = Math.floor(days / 30);
+            if (months < 12) return `${months}mo ago`;
+
+            const years = Math.floor(months / 12);
+            return `${years}y ago`;
+        }        
 
         // Format date for CSV (ISO format)
         function formatDateForCsv(dateString) {
@@ -2525,7 +2552,7 @@
             loadDeployments();
         }
 
-        // Find the latest release branch version from deployments
+        // Find the latest release branch version, build number and build time from deployments
         function findLatestReleaseBranch(deployments) {
             if (!deployments || deployments.length === 0) return null;
 
@@ -2535,6 +2562,8 @@
                 if (dep.buildSourceBranch && dep.buildSourceBranch.includes('/release/')) {
                     releaseBranches.push({
                         branch: dep.buildSourceBranch,
+                        buildNumber: dep.buildNumber,
+                        buildStartTime: dep.buildStartTime,
                         finishTime: dep.deploymentRecordFinishTime
                     });
                 }
@@ -2544,6 +2573,8 @@
                         if (hist.buildSourceBranch && hist.buildSourceBranch.includes('/release/')) {
                             releaseBranches.push({
                                 branch: hist.buildSourceBranch,
+                                buildNumber: hist.buildNumber,
+                                buildStartTime: hist.buildStartTime,
                                 finishTime: hist.deploymentRecordFinishTime
                             });
                         }
@@ -2569,9 +2600,13 @@
                 return new Date(b.finishTime) - new Date(a.finishTime);
             });
 
-            // Return clean version string (e.g. "1.2.3" from "refs/heads/release/1.2.3")
-            return releaseBranches[0].branch.replace(/^.*\/release\//, '');
-        }        
+            // Return object with version string, build number, and build time
+            return {
+                version: releaseBranches[0].branch.replace(/^.*\/release\//, ''),
+                buildNumber: releaseBranches[0].buildNumber || null,
+                buildStartTime: releaseBranches[0].buildStartTime || null
+            };
+        }
 
         // Load deployments
         async function loadDeployments() {
@@ -2614,11 +2649,24 @@
                 document.getElementById('totalCount').textContent = data.totalCount;
                 document.getElementById('lastUpdated').textContent = `Updated: ${formatDate(new Date())}`;
 
-                // Find and display the latest release branch version
+                // Find and display the latest release branch version, build number and age
                 const latestReleaseBranch = findLatestReleaseBranch(data.data);
                 const releaseContainer = document.getElementById('latestReleaseContainer');
                 if (latestReleaseBranch) {
-                    document.getElementById('latestReleaseVersion').textContent = latestReleaseBranch;
+                    document.getElementById('latestReleaseVersion').textContent = `release/${latestReleaseBranch.version}`;
+                    const buildNumEl = document.getElementById('latestReleaseBuildNumber');
+                    if (buildNumEl) {
+                        buildNumEl.textContent = latestReleaseBranch.buildNumber || 'N/A';
+                    }
+                    const buildAgeEl = document.getElementById('latestReleaseBuildAge');
+                    if (buildAgeEl) {
+                        if (latestReleaseBranch.buildStartTime) {
+                            buildAgeEl.textContent = `Built ${timeAgo(latestReleaseBranch.buildStartTime)}`;
+                            buildAgeEl.title = formatDate(latestReleaseBranch.buildStartTime);
+                        } else {
+                            buildAgeEl.textContent = '';
+                        }
+                    }
                     releaseContainer.classList.remove('hidden');
                     releaseContainer.classList.add('flex');
                 } else {
