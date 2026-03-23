@@ -1773,6 +1773,25 @@
             filterComparisonCommits();
         }
 
+        // Helper function to get a branch status badge (release/hotfix/other)
+        function getBranchStatusBadge(branchName) {
+            if (!branchName || branchName === 'N/A') return '';
+            const clean = branchName.replace(/^refs\/heads\//, '');
+            if (clean.startsWith('release/')) {
+                return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 border border-green-300">
+                    <i class="fas fa-check-circle text-green-600"></i> Release Canidate
+                </span>`;
+            }
+            if (clean.startsWith('hotfix/')) {
+                return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                    <i class="fas fa-exclamation-triangle text-amber-500"></i> Hotfix
+                </span>`;
+            }
+            return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-300">
+                <i class="fas fa-times-circle text-red-600"></i> Not a Release Candidate
+            </span>`;
+        }
+
         // Helper function to create a Bitbucket branch link
         function createBranchLink(branchName, showCommitsLink = false) {
             if (!branchName || branchName === 'N/A') {
@@ -2209,7 +2228,11 @@
         // Create deployment item - PROPERLY FIXED VERSION
         function createDeploymentItem(deployment, index) {
             // Environment name
-            let envNameHtml = `<span class="text-2xl font-bold text-gray-800">${escapeHtml(deployment.environmentName)}</span>`;
+            const branchStatusBadge = getBranchStatusBadge(deployment.buildSourceBranch);
+            let envNameHtml = `<div class="flex items-center gap-3 flex-wrap">
+                <span class="text-2xl font-bold text-gray-800">${escapeHtml(deployment.environmentName)}</span>
+                ${branchStatusBadge}
+            </div>`;
 
             // Build portal links from variables
             let portalLinksHtml = '';
