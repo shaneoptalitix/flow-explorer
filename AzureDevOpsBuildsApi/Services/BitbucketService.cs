@@ -82,8 +82,8 @@ public class BitbucketService : IBitbucketService
                 branchName?.Contains("%2F", StringComparison.OrdinalIgnoreCase) ?? false);
 
             // If the branch name contains %2F, it's already encoded - decode it first
-            if (branchName.Contains("%2F", StringComparison.OrdinalIgnoreCase) ||
-                branchName.Contains("%", StringComparison.OrdinalIgnoreCase))
+            if ((branchName?.Contains("%2F", StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (branchName?.Contains("%", StringComparison.OrdinalIgnoreCase) ?? false))
             {
                 _logger.LogInformation(
                     "[DIAGNOSTIC] Branch name appears to be URL-encoded. Decoding first...");
@@ -97,7 +97,7 @@ public class BitbucketService : IBitbucketService
             var pagesFetched = 0;
 
             // Clean the branch name properly for Bitbucket API
-            var cleanBranchName = branchName.Replace("refs/heads/", "");
+            var cleanBranchName = branchName?.Replace("refs/heads/", "") ?? "";
             _logger.LogInformation(
                 "[DIAGNOSTIC] Cleaned branch name: '{CleanBranch}' (Original: '{OriginalBranch}')",
                 cleanBranchName, branchName);

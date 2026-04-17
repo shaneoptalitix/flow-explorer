@@ -12,7 +12,8 @@ public interface IAzureDevOpsService
         int pageSize = 40,
         bool includeVariableGroups = true,
         string sortBy = "deploymentFinishTime",
-        string sortOrder = "desc");
+        string sortOrder = "desc",
+        string? releaseCandidateFilter = null);
 
     Task<List<PipelineBranchInfo>> GetPipelineBranchesAsync(
         int definitionId,

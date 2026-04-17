@@ -163,7 +163,8 @@ public class AzureDevOpsService : IAzureDevOpsService
         int pageSize = 40,
         bool includeVariableGroups = true,
         string sortBy = "deploymentFinishTime",
-        string sortOrder = "desc")
+        string sortOrder = "desc",
+        string? releaseCandidateFilter = null)
     {
         var reports = new List<EnvironmentReport>();
 
@@ -265,6 +266,12 @@ public class AzureDevOpsService : IAzureDevOpsService
                         report.HistoricalDeployments.Add(histReport);
                     }
                     
+                    bool isRc = report.BuildSourceBranch?.Contains("/release/", StringComparison.OrdinalIgnoreCase) == true
+                             || report.BuildSourceBranch?.StartsWith("release/", StringComparison.OrdinalIgnoreCase) == true;
+
+                    if (releaseCandidateFilter == "rc" && !isRc) continue;
+                    if (releaseCandidateFilter == "notrc" && isRc) continue;
+
                     reports.Add(report);
                 }
             }
