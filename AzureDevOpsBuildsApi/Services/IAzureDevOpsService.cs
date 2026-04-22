@@ -15,6 +15,8 @@ public interface IAzureDevOpsService
         string sortOrder = "desc",
         string? releaseCandidateFilter = null);
 
+    Task<List<string>> GetRcVersionsAsync();
+
     Task<List<PipelineBranchInfo>> GetPipelineBranchesAsync(
         int definitionId,
         int top = 300,

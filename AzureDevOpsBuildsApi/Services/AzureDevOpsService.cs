@@ -266,11 +266,16 @@ public class AzureDevOpsService : IAzureDevOpsService
                         report.HistoricalDeployments.Add(histReport);
                     }
                     
-                    bool isRc = report.BuildSourceBranch?.Contains("/release/", StringComparison.OrdinalIgnoreCase) == true
-                             || report.BuildSourceBranch?.StartsWith("release/", StringComparison.OrdinalIgnoreCase) == true;
+                    var normalizedBranch = NormalizeBranchName(report.BuildSourceBranch);
+                    bool isRc = normalizedBranch?.Contains("/release/", StringComparison.OrdinalIgnoreCase) == true
+                             || normalizedBranch?.StartsWith("release/", StringComparison.OrdinalIgnoreCase) == true;
 
                     if (releaseCandidateFilter == "rc" && !isRc) continue;
                     if (releaseCandidateFilter == "notrc" && isRc) continue;
+                    if (!string.IsNullOrEmpty(releaseCandidateFilter)
+                        && releaseCandidateFilter != "rc"
+                        && releaseCandidateFilter != "notrc"
+                        && !normalizedBranch?.Equals(releaseCandidateFilter, StringComparison.OrdinalIgnoreCase) == true) continue;
 
                     reports.Add(report);
                 }
@@ -519,6 +524,56 @@ public class AzureDevOpsService : IAzureDevOpsService
             var variableGroupsResponse = JsonSerializer.Deserialize<VariableGroupsResponse>(response);
             return variableGroupsResponse?.Value ?? new List<VariableGroup>();
         }) ?? new List<VariableGroup>();
+    }
+
+    private static string? NormalizeBranchName(string? branch)
+    {
+        if (string.IsNullOrEmpty(branch)) return branch;
+        return branch.StartsWith("refs/heads/", StringComparison.OrdinalIgnoreCase)
+            ? branch.Substring(11)
+            : branch;
+    }
+
+    public async Task<List<string>> GetRcVersionsAsync()
+    {
+        var rcBranches = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var environments = await GetEnvironmentsAsync();
+
+        foreach (var environment in environments)
+        {
+            var deploymentRecords = await GetEnvironmentDeploymentRecordsAsync(environment.Id);
+            var latestSucceeded = deploymentRecords
+                .Where(dr => dr.Result.Equals("succeeded", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(dr => dr.FinishTime)
+                .FirstOrDefault();
+
+            if (latestSucceeded == null) continue;
+
+            try
+            {
+                var build = await GetBuildAsync(latestSucceeded.Owner.Id);
+                var normalized = NormalizeBranchName(build?.SourceBranch);
+                if (!string.IsNullOrEmpty(normalized)
+                    && (normalized.Contains("/release/", StringComparison.OrdinalIgnoreCase)
+                        || normalized.StartsWith("release/", StringComparison.OrdinalIgnoreCase)))
+                {
+                    rcBranches.Add(normalized);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Failed to get build for deployment {Id}: {Msg}", latestSucceeded.Id, ex.Message);
+            }
+        }
+
+        return rcBranches
+            .OrderByDescending(b =>
+            {
+                var ver = System.Text.RegularExpressions.Regex.Match(b, @"\d+\.\d+[\.\d]*").Value;
+                return Version.TryParse(ver, out var v) ? v : new Version(0, 0);
+            })
+            .ToList();
     }
 
     private async Task<Build?> GetBuildAsync(int buildId)

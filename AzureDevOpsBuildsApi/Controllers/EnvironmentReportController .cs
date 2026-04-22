@@ -92,7 +92,28 @@ public class EnvironmentReportController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error occurred while getting environment reports");
-            return StatusCode(StatusCodes.Status500InternalServerError, 
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                "An error occurred while processing your request");
+        }
+    }
+
+    /// <summary>
+    /// Returns the distinct release candidate branch names (e.g. "release/2.10.0") found across all environments.
+    /// </summary>
+    [HttpGet("rc-versions")]
+    [ProducesResponseType(typeof(List<string>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<List<string>>> GetRcVersions()
+    {
+        try
+        {
+            var versions = await _azureDevOpsService.GetRcVersionsAsync();
+            return Ok(versions);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error occurred while getting RC versions");
+            return StatusCode(StatusCodes.Status500InternalServerError,
                 "An error occurred while processing your request");
         }
     }
