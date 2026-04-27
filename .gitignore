@@ -452,3 +452,4 @@ appsettings.Production.json
 *.log
 publish/
 .env
+.claude/settings.local.json

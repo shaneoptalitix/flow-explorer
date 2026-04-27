@@ -98,6 +98,42 @@ public class EnvironmentReportController : ControllerBase
     }
 
     /// <summary>
+    /// Returns the latest build for a specific branch, independent of what has been deployed.
+    /// </summary>
+    [HttpGet("latest-branch-build")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult> GetLatestBranchBuild([FromQuery] string? branch = null)
+    {
+        if (string.IsNullOrWhiteSpace(branch))
+            return BadRequest("branch is required.");
+
+        try
+        {
+            var build = await _azureDevOpsService.GetLatestBuildForBranchAsync(branch);
+            if (build == null)
+                return NotFound();
+
+            return Ok(new
+            {
+                buildNumber = build.BuildNumber,
+                buildStartTime = build.StartTime,
+                buildId = build.Id,
+                status = build.Status,
+                result = build.Result
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching latest build for branch {Branch}", branch);
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                "An error occurred while processing your request");
+        }
+    }
+
+    /// <summary>
     /// Returns the distinct release candidate branch names (e.g. "release/2.10.0") found across all environments.
     /// </summary>
     [HttpGet("rc-versions")]

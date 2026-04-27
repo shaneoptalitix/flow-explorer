@@ -576,6 +576,26 @@ public class AzureDevOpsService : IAzureDevOpsService
             .ToList();
     }
 
+    public async Task<Build?> GetLatestBuildForBranchAsync(string branch)
+    {
+        var normalizedBranch = branch.StartsWith("refs/heads/", StringComparison.OrdinalIgnoreCase)
+            ? branch
+            : $"refs/heads/{branch}";
+
+        var cacheKey = $"latest_branch_build_{normalizedBranch}";
+
+        return await _cache.GetOrCreateAsync(cacheKey, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
+            entry.Size = 1;
+
+            var url = $"_apis/build/builds?branchName={Uri.EscapeDataString(normalizedBranch)}&queryOrder=startTimeDescending&$top=1&api-version={_config.ApiVersion}";
+            var response = await _httpClient.GetStringAsync(url);
+            var buildsResponse = JsonSerializer.Deserialize<BuildsResponse>(response);
+            return buildsResponse?.Value?.FirstOrDefault();
+        });
+    }
+
     private async Task<Build?> GetBuildAsync(int buildId)
     {
         var cacheKey = $"{BUILD_CACHE_KEY_PREFIX}{buildId}";

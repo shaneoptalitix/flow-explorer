@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flow Environments & Deployments Explorer (FEDE)</title>
+    <title>FEDE - Flow Environments & Deployments Explorer</title>
     <link rel="icon" type="image/png" href="img/favicon.png">
     <link rel="icon" type="image/x-icon" href="img/favicon.png">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -2706,28 +2706,59 @@
                 document.getElementById('lastUpdated').textContent = `Updated: ${formatDate(new Date())}`;
 
                 // Find and display the latest release branch version, build number and age
-                const latestReleaseBranch = findLatestReleaseBranch(data.data);
                 const releaseContainer = document.getElementById('latestReleaseContainer');
-                if (latestReleaseBranch) {
-                    document.getElementById('latestReleaseVersion').textContent = `release/${latestReleaseBranch.version}`;
-                    const buildNumEl = document.getElementById('latestReleaseBuildNumber');
-                    if (buildNumEl) {
-                        buildNumEl.textContent = latestReleaseBranch.buildNumber || 'N/A';
-                    }
-                    const buildAgeEl = document.getElementById('latestReleaseBuildAge');
-                    if (buildAgeEl) {
-                        if (latestReleaseBranch.buildStartTime) {
-                            buildAgeEl.textContent = `Built ${timeAgo(latestReleaseBranch.buildStartTime)}`;
-                            buildAgeEl.title = formatDate(latestReleaseBranch.buildStartTime);
+                const isSpecificRc = rcVersionFilter && rcVersionFilter !== 'rc' && rcVersionFilter !== 'notrc';
+
+                if (isSpecificRc) {
+                    // Fetch the true latest build for this branch directly — not affected by deployed versions
+                    try {
+                        const branchBuildResp = await fetch(`${API_BASE_URL}/api/EnvironmentReport/latest-branch-build?branch=${encodeURIComponent(rcVersionFilter)}`);
+                        if (branchBuildResp.ok) {
+                            const branchBuild = await branchBuildResp.json();
+                            document.getElementById('latestReleaseVersion').textContent = rcVersionFilter;
+                            const buildNumEl = document.getElementById('latestReleaseBuildNumber');
+                            if (buildNumEl) buildNumEl.textContent = branchBuild.buildNumber || 'N/A';
+                            const buildAgeEl = document.getElementById('latestReleaseBuildAge');
+                            if (buildAgeEl) {
+                                if (branchBuild.buildStartTime) {
+                                    buildAgeEl.textContent = `Built ${timeAgo(branchBuild.buildStartTime)}`;
+                                    buildAgeEl.title = formatDate(branchBuild.buildStartTime);
+                                } else {
+                                    buildAgeEl.textContent = '';
+                                }
+                            }
+                            releaseContainer.classList.remove('hidden');
+                            releaseContainer.classList.add('flex');
                         } else {
-                            buildAgeEl.textContent = '';
+                            releaseContainer.classList.add('hidden');
+                            releaseContainer.classList.remove('flex');
                         }
+                    } catch (e) {
+                        console.warn('Could not fetch latest branch build:', e);
+                        releaseContainer.classList.add('hidden');
+                        releaseContainer.classList.remove('flex');
                     }
-                    releaseContainer.classList.remove('hidden');
-                    releaseContainer.classList.add('flex');
                 } else {
-                    releaseContainer.classList.add('hidden');
-                    releaseContainer.classList.remove('flex');
+                    const latestReleaseBranch = findLatestReleaseBranch(data.data);
+                    if (latestReleaseBranch) {
+                        document.getElementById('latestReleaseVersion').textContent = `release/${latestReleaseBranch.version}`;
+                        const buildNumEl = document.getElementById('latestReleaseBuildNumber');
+                        if (buildNumEl) buildNumEl.textContent = latestReleaseBranch.buildNumber || 'N/A';
+                        const buildAgeEl = document.getElementById('latestReleaseBuildAge');
+                        if (buildAgeEl) {
+                            if (latestReleaseBranch.buildStartTime) {
+                                buildAgeEl.textContent = `Built ${timeAgo(latestReleaseBranch.buildStartTime)}`;
+                                buildAgeEl.title = formatDate(latestReleaseBranch.buildStartTime);
+                            } else {
+                                buildAgeEl.textContent = '';
+                            }
+                        }
+                        releaseContainer.classList.remove('hidden');
+                        releaseContainer.classList.add('flex');
+                    } else {
+                        releaseContainer.classList.add('hidden');
+                        releaseContainer.classList.remove('flex');
+                    }
                 }
 
                 totalPages = data.totalPages;
