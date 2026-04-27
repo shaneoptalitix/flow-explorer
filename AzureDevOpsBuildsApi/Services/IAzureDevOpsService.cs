@@ -17,7 +17,7 @@ public interface IAzureDevOpsService
 
     Task<List<string>> GetRcVersionsAsync();
 
-    Task<Build?> GetLatestBuildForBranchAsync(string branch);
+    Task<LatestBranchBuildResult?> GetLatestBuildForBranchAsync(string branch);
 
     Task<List<PipelineBranchInfo>> GetPipelineBranchesAsync(
         int definitionId,

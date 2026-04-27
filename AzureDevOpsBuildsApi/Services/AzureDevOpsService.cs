@@ -576,7 +576,7 @@ public class AzureDevOpsService : IAzureDevOpsService
             .ToList();
     }
 
-    public async Task<Build?> GetLatestBuildForBranchAsync(string branch)
+    public async Task<LatestBranchBuildResult?> GetLatestBuildForBranchAsync(string branch)
     {
         var normalizedBranch = branch.StartsWith("refs/heads/", StringComparison.OrdinalIgnoreCase)
             ? branch
@@ -589,10 +589,21 @@ public class AzureDevOpsService : IAzureDevOpsService
             entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
             entry.Size = 1;
 
-            var url = $"_apis/build/builds?branchName={Uri.EscapeDataString(normalizedBranch)}&queryOrder=startTimeDescending&$top=1&api-version={_config.ApiVersion}";
+            // Fetch a window of recent builds then sort by version number so we get the true
+            // highest build, regardless of queue/start-time order (handles counter resets, re-runs).
+            var url = $"_apis/build/builds?branchName={Uri.EscapeDataString(normalizedBranch)}&queryOrder=startTimeDescending&$top=50&api-version={_config.ApiVersion}";
             var response = await _httpClient.GetStringAsync(url);
             var buildsResponse = JsonSerializer.Deserialize<BuildsResponse>(response);
-            return buildsResponse?.Value?.FirstOrDefault();
+            var builds = (buildsResponse?.Value ?? new List<Build>())
+                .OrderByDescending(b =>
+                    Version.TryParse(b.BuildNumber, out var v) ? v : new Version(0, 0))
+                .ToList();
+
+            return new LatestBranchBuildResult
+            {
+                LatestBuild = builds.FirstOrDefault(),
+                RecentBuildNumbers = builds.Select(b => b.BuildNumber).ToList()
+            };
         });
     }
 

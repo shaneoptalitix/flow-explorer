@@ -195,6 +195,12 @@ public class EnvironmentReport
     public List<EnvironmentReport> HistoricalDeployments { get; set; } = new();
 }
 
+public class LatestBranchBuildResult
+{
+    public Build? LatestBuild { get; set; }
+    public List<string> RecentBuildNumbers { get; set; } = new();
+}
+
 // Paged response model
 public class PagedEnvironmentReportResponse
 {

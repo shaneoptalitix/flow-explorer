@@ -112,17 +112,19 @@ public class EnvironmentReportController : ControllerBase
 
         try
         {
-            var build = await _azureDevOpsService.GetLatestBuildForBranchAsync(branch);
-            if (build == null)
+            var result = await _azureDevOpsService.GetLatestBuildForBranchAsync(branch);
+            if (result?.LatestBuild == null)
                 return NotFound();
 
+            var build = result.LatestBuild;
             return Ok(new
             {
                 buildNumber = build.BuildNumber,
                 buildStartTime = build.StartTime,
                 buildId = build.Id,
                 status = build.Status,
-                result = build.Result
+                result = build.Result,
+                recentBuildNumbers = result.RecentBuildNumbers
             });
         }
         catch (Exception ex)
