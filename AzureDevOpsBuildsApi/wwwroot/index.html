@@ -384,6 +384,9 @@
                 <button onclick="clearFilters()" class="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-semibold hover:bg-gray-200 transition-colors flex items-center gap-2">
                     <i class="fas fa-times"></i>Clear Filters
                 </button>
+                <button onclick="downloadCsv()" class="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center gap-2">
+                    <i class="fas fa-download"></i>Download CSV
+                </button>
                 <button onclick="enterCompareMode()" class="bg-purple-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-purple-700 transition-colors">
                     <i class="fas fa-code-compare mr-2"></i>Compare Environments
                 </button>
@@ -2717,6 +2720,43 @@
         }
 
         // Load deployments
+        function downloadCsv() {
+            if (!allDeployments || allDeployments.length === 0) return;
+
+            const csvCell = v => {
+                if (v == null) return '';
+                const s = String(v);
+                return s.includes(',') || s.includes('"') || s.includes('\n')
+                    ? `"${s.replace(/"/g, '""')}"` : s;
+            };
+
+            const isRc = branch => branch &&
+                (branch.includes('/release/') || branch.toLowerCase().startsWith('release/'));
+
+            const headers = [
+                'Environment', 'Build Number', 'Branch', 'Deployment Date', 'Build Date', 'Commit ID', 'RC'
+            ];
+
+            const rows = allDeployments.map(d => [
+                d.environmentName,
+                d.buildNumber,
+                d.buildSourceBranch,
+                d.deploymentRecordFinishTime ? new Date(d.deploymentRecordFinishTime).toISOString() : '',
+                d.buildStartTime ? new Date(d.buildStartTime).toISOString() : '',
+                d.buildSourceVersion,
+                isRc(d.buildSourceBranch) ? 'Yes' : 'No'
+            ]);
+
+            const csv = [headers, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `deployments-${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
         function clearFilters() {
             document.getElementById('environmentFilter').value = '';
             document.getElementById('pageSize').value = '50';
