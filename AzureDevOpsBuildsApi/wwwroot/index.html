@@ -381,6 +381,9 @@
                 <button onclick="loadDeployments()" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors">
                     Apply Filters
                 </button>
+                <button onclick="clearFilters()" class="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-semibold hover:bg-gray-200 transition-colors flex items-center gap-2">
+                    <i class="fas fa-times"></i>Clear Filters
+                </button>
                 <button onclick="enterCompareMode()" class="bg-purple-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-purple-700 transition-colors">
                     <i class="fas fa-code-compare mr-2"></i>Compare Environments
                 </button>
@@ -2714,6 +2717,16 @@
         }
 
         // Load deployments
+        function clearFilters() {
+            document.getElementById('environmentFilter').value = '';
+            document.getElementById('pageSize').value = '50';
+            document.getElementById('sortBy').value = 'deploymentFinishTime';
+            document.getElementById('sortOrder').value = 'desc';
+            document.getElementById('rcVersionFilter').value = '';
+            currentPage = 1;
+            loadDeployments();
+        }
+
         async function loadDeployments() {
             const environmentFilter = document.getElementById('environmentFilter').value;
             const pageSize = document.getElementById('pageSize').value;
