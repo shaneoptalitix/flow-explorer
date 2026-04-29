@@ -19,6 +19,8 @@ public interface IAzureDevOpsService
 
     Task<LatestBranchBuildResult?> GetLatestBuildForBranchAsync(string branch);
 
+    Task<DeploymentTypeBuilds> GetLatestDeploymentBuildsAsync();
+
     Task<List<PipelineBranchInfo>> GetPipelineBranchesAsync(
         int definitionId,
         int top = 300,

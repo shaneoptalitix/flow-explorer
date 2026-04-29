@@ -607,6 +607,51 @@ public class AzureDevOpsService : IAzureDevOpsService
         });
     }
 
+    public async Task<DeploymentTypeBuilds> GetLatestDeploymentBuildsAsync()
+    {
+        var quoteTask = _config.QuoteDefinitionId > 0
+            ? GetLatestBuildForDefinitionAsync(_config.QuoteDefinitionId)
+            : Task.FromResult<Build?>(null);
+
+        var originateTask = _config.OriginateDefinitionId > 0
+            ? GetLatestBuildForDefinitionAsync(_config.OriginateDefinitionId)
+            : Task.FromResult<Build?>(null);
+
+        await Task.WhenAll(quoteTask, originateTask);
+
+        return new DeploymentTypeBuilds
+        {
+            Quote = await quoteTask,
+            QuoteDefinitionId = _config.QuoteDefinitionId,
+            Originate = await originateTask,
+            OriginateDefinitionId = _config.OriginateDefinitionId
+        };
+    }
+
+    private async Task<Build?> GetLatestBuildForDefinitionAsync(int definitionId)
+    {
+        var cacheKey = $"latest_def_build_{definitionId}";
+
+        return await _cache.GetOrCreateAsync(cacheKey, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
+            entry.Size = 1;
+
+            try
+            {
+                var url = $"_apis/build/builds?definitions={definitionId}&top=1&queryOrder=startTimeDescending&api-version={_config.ApiVersion}";
+                var response = await _httpClient.GetStringAsync(url);
+                var buildsResponse = JsonSerializer.Deserialize<BuildsResponse>(response);
+                return buildsResponse?.Value?.FirstOrDefault();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching latest build for definition {DefinitionId}", definitionId);
+                return null;
+            }
+        });
+    }
+
     private async Task<Build?> GetBuildAsync(int buildId)
     {
         var cacheKey = $"{BUILD_CACHE_KEY_PREFIX}{buildId}";

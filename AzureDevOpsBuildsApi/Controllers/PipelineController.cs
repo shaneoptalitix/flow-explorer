@@ -21,6 +21,45 @@ public class PipelineController : ControllerBase
     }
 
     /// <summary>
+    /// Gets the latest build for both Quote and Originate pipeline definitions
+    /// </summary>
+    [HttpGet("latest-deployment-builds")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult> GetLatestDeploymentBuilds()
+    {
+        try
+        {
+            var builds = await _azureDevOpsService.GetLatestDeploymentBuildsAsync();
+
+            static object? BuildDto(Build? b, int defId) => b == null ? null : new
+            {
+                buildNumber = b.BuildNumber,
+                buildStartTime = b.StartTime,
+                buildId = b.Id,
+                status = b.Status,
+                result = b.Result,
+                sourceBranch = b.SourceBranch,
+                definitionId = defId
+            };
+
+            return Ok(new
+            {
+                quote = BuildDto(builds.Quote, builds.QuoteDefinitionId),
+                originate = BuildDto(builds.Originate, builds.OriginateDefinitionId),
+                quoteDefinitionId = builds.QuoteDefinitionId,
+                originateDefinitionId = builds.OriginateDefinitionId
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching latest deployment builds");
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                "An error occurred while processing your request");
+        }
+    }
+
+    /// <summary>
     /// Gets pipeline branches with build information for a specific pipeline definition
     /// </summary>
     /// <param name="definitionId">The pipeline definition ID</param>

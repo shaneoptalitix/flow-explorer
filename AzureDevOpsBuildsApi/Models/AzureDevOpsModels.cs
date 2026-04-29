@@ -201,6 +201,14 @@ public class LatestBranchBuildResult
     public List<string> RecentBuildNumbers { get; set; } = new();
 }
 
+public class DeploymentTypeBuilds
+{
+    public Build? Quote { get; set; }
+    public int QuoteDefinitionId { get; set; }
+    public Build? Originate { get; set; }
+    public int OriginateDefinitionId { get; set; }
+}
+
 // Paged response model
 public class PagedEnvironmentReportResponse
 {

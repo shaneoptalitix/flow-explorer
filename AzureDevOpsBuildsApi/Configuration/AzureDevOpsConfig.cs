@@ -6,4 +6,6 @@ public class AzureDevOpsConfig
     public string Project { get; set; } = string.Empty;
     public string PersonalAccessToken { get; set; } = string.Empty;
     public string ApiVersion { get; set; } = string.Empty;
+    public int QuoteDefinitionId { get; set; }
+    public int OriginateDefinitionId { get; set; }
 }

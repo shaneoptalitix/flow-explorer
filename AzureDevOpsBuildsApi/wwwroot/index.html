@@ -395,7 +395,7 @@
 
         <!-- Stats -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between flex-wrap gap-4">
                 <div class="flex items-center space-x-4">
                     <div class="p-3 bg-blue-100 rounded-lg">
                         <i class="fas fa-database text-blue-600 text-2xl"></i>
@@ -405,17 +405,29 @@
                         <p class="text-2xl font-bold text-gray-800" id="totalCount">-</p>
                     </div>
                 </div>
-                <div id="latestReleaseContainer" class="hidden flex items-center space-x-3">
-                    <div class="p-3 bg-green-100 rounded-lg">
-                        <i class="fas fa-code-branch text-green-600 text-2xl"></i>
+                <div id="quoteLatestBuildContainer" class="flex items-center space-x-3">
+                    <div class="p-3 bg-purple-100 rounded-lg">
+                        <i class="fas fa-hammer text-purple-600 text-2xl"></i>
                     </div>
                     <div>
-                        <p class="text-sm text-gray-600">Latest Release Candidate</p>
-                        <p class="text-lg font-bold text-green-700" id="latestReleaseVersion">-</p>
+                        <p class="text-sm text-gray-600">Latest Quote Build</p>
                         <div class="flex items-center gap-2">
-                            <span class="text-sm font-mono text-green-600" id="latestReleaseBuildNumber">-</span>
-                            <span class="text-xs text-gray-400">|</span>
-                            <span class="text-xs text-gray-500 cursor-help" id="latestReleaseBuildAge"></span>
+                            <span class="text-sm font-mono text-purple-600" id="quoteLatestBuildNumber">-</span>
+                            <span class="text-xs text-gray-400" id="quoteLatestBuildAgeSep">|</span>
+                            <span class="text-xs text-gray-500 cursor-help" id="quoteLatestBuildAge"></span>
+                        </div>
+                    </div>
+                </div>
+                <div id="originateLatestBuildContainer" class="flex items-center space-x-3">
+                    <div class="p-3 bg-orange-100 rounded-lg">
+                        <i class="fas fa-rocket text-orange-600 text-2xl"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-600">Latest Originate Build</p>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-mono text-orange-600" id="originateLatestBuildNumber">-</span>
+                            <span class="text-xs text-gray-400" id="originateLatestBuildAgeSep">|</span>
+                            <span class="text-xs text-gray-500 cursor-help" id="originateLatestBuildAge"></span>
                         </div>
                     </div>
                 </div>
@@ -634,7 +646,7 @@
         let isCompareMode = false;
         let selectedDeployments = [];
         let allDeployments = [];
-        let latestRcBuild = null;
+        let latestDeploymentBuilds = null; // { quote, originate, quoteDefinitionId, originateDefinitionId }
         let allComparisonCommits = []; // Store all commits for filtering
         let comparisonMetadata = { fromEnv: '', toEnv: '', fromCommit: '', toCommit: '' }; // Store comparison metadata for CSV
 
@@ -2217,7 +2229,7 @@
                                 <div>
                                     <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Number</p>
                                     ${buildNumberHtml}
-                                    ${buildRcStatusHtml(deployment.buildNumber, deployment.buildStartTime, deployment.buildSourceBranch)}
+                                    ${buildRcStatusHtml(deployment.buildNumber, deployment.buildStartTime, deployment.deploymentRecordDefinitionId, deployment.buildSourceBranch)}
                                 </div>
                                 <div>
                                     <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch</p>
@@ -2245,8 +2257,14 @@
         function createDeploymentItem(deployment, index) {
             // Environment name
             const branchStatusBadge = getBranchStatusBadge(deployment.buildSourceBranch);
+            const defId = deployment.deploymentRecordDefinitionId;
+            const titleColor = latestDeploymentBuilds && defId === latestDeploymentBuilds.quoteDefinitionId
+                ? 'text-purple-700'
+                : latestDeploymentBuilds && defId === latestDeploymentBuilds.originateDefinitionId
+                    ? 'text-orange-600'
+                    : 'text-gray-800';
             let envNameHtml = `<div class="flex items-center gap-3 flex-wrap">
-                <span class="text-2xl font-bold text-gray-800">${escapeHtml(deployment.environmentName)}</span>
+                <span class="text-2xl font-bold ${titleColor}">${escapeHtml(deployment.environmentName)}</span>
                 ${branchStatusBadge}
             </div>`;
 
@@ -2488,7 +2506,7 @@
                                             <div>
                                                 <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Build Number</p>
                                                 ${buildNumberHtml}
-                                                ${buildRcStatusHtml(deployment.buildNumber, deployment.buildStartTime, deployment.buildSourceBranch)}
+                                                ${buildRcStatusHtml(deployment.buildNumber, deployment.buildStartTime, deployment.deploymentRecordDefinitionId, deployment.buildSourceBranch)}
                                             </div>
                                             <div>
                                                 <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch</p>
@@ -2606,29 +2624,36 @@
             return 'less than a minute';
         }
 
-        function buildRcStatusHtml(deployedBuildNumber, deployedBuildStartTime, deployedBranch) {
-            if (!latestRcBuild || !latestRcBuild.buildNumber) return '';
-            if (!deployedBranch || (!deployedBranch.includes('/release/') && !deployedBranch.toLowerCase().startsWith('release/'))) return '';
-            if (deployedBuildNumber === latestRcBuild.buildNumber) {
+        function buildRcStatusHtml(deployedBuildNumber, deployedBuildStartTime, definitionId, deployedBranch) {
+            if (!latestDeploymentBuilds) return '';
+            if (!deployedBranch) return '';
+            const b = deployedBranch.toLowerCase();
+            if (!b.includes('/release/') && !b.startsWith('release/') && !b.includes('/hotfix/') && !b.startsWith('hotfix/')) return '';
+            const isQuote = definitionId === latestDeploymentBuilds.quoteDefinitionId;
+            const isOriginate = definitionId === latestDeploymentBuilds.originateDefinitionId;
+            if (!isQuote && !isOriginate) return '';
+            const latestBuild = isQuote ? latestDeploymentBuilds.quote : latestDeploymentBuilds.originate;
+            if (!latestBuild || !latestBuild.buildNumber) return '';
+            const typeName = isQuote ? 'Quote' : 'Originate';
+            if (deployedBuildNumber === latestBuild.buildNumber) {
                 return `<span class="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700 cursor-help"
-                              title="Latest RC: ${escapeHtml(latestRcBuild.buildNumber)}">
-                            <i class="fas fa-check-circle"></i> On latest RC
+                              title="Latest ${typeName}: ${escapeHtml(latestBuild.buildNumber)}">
+                            <i class="fas fa-check-circle"></i> On latest
                         </span>`;
             }
             const parts = [];
-            // Count by subtracting the trailing revision number (e.g. 3.1.0.3733 - 3.1.0.3624 = 109)
             const rev = bn => { const s = (bn || '').split('.'); return parseInt(s[s.length - 1], 10); };
             const deployedRev = rev(deployedBuildNumber);
-            const latestRev = rev(latestRcBuild.buildNumber);
+            const latestRev = rev(latestBuild.buildNumber);
             if (!isNaN(deployedRev) && !isNaN(latestRev) && latestRev > deployedRev) {
                 const count = latestRev - deployedRev;
                 parts.push(`${count} build${count !== 1 ? 's' : ''} behind`);
             }
-            const diff = timeDiffHuman(deployedBuildStartTime, latestRcBuild.buildStartTime);
+            const diff = timeDiffHuman(deployedBuildStartTime, latestBuild.buildStartTime);
             if (diff) parts.push(diff);
             const detail = parts.length ? ` · ${parts.join(' · ')}` : '';
-            const ageDiffMs = latestRcBuild.buildStartTime && deployedBuildStartTime
-                ? new Date(latestRcBuild.buildStartTime) - new Date(deployedBuildStartTime)
+            const ageDiffMs = latestBuild.buildStartTime && deployedBuildStartTime
+                ? new Date(latestBuild.buildStartTime) - new Date(deployedBuildStartTime)
                 : 0;
             const oneMonth = 30 * 24 * 60 * 60 * 1000;
             const twoWeeks = 14 * 24 * 60 * 60 * 1000;
@@ -2638,67 +2663,12 @@
                     ? 'bg-orange-100 text-orange-700'
                     : 'bg-green-100 text-green-700';
             return `<span class="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded text-xs font-semibold ${colorClass} cursor-help"
-                          title="Latest RC: ${escapeHtml(latestRcBuild.buildNumber)}">
-                        <i class="fas fa-clock"></i> Behind latest RC${escapeHtml(detail)}
+                          title="Latest ${typeName}: ${escapeHtml(latestBuild.buildNumber)}">
+                        <i class="fas fa-clock"></i> Behind latest${escapeHtml(detail)}
                     </span>`;
         }
 
         // Find the latest release branch version, build number and build time from deployments
-        function findLatestReleaseBranch(deployments) {
-            if (!deployments || deployments.length === 0) return null;
-
-            const releaseBranches = [];
-
-            for (const dep of deployments) {
-                if (dep.buildSourceBranch && dep.buildSourceBranch.includes('/release/')) {
-                    releaseBranches.push({
-                        branch: dep.buildSourceBranch,
-                        buildNumber: dep.buildNumber,
-                        buildStartTime: dep.buildStartTime,
-                        finishTime: dep.deploymentRecordFinishTime
-                    });
-                }
-                // Also check historical deployments
-                if (dep.historicalDeployments) {
-                    for (const hist of dep.historicalDeployments) {
-                        if (hist.buildSourceBranch && hist.buildSourceBranch.includes('/release/')) {
-                            releaseBranches.push({
-                                branch: hist.buildSourceBranch,
-                                buildNumber: hist.buildNumber,
-                                buildStartTime: hist.buildStartTime,
-                                finishTime: hist.deploymentRecordFinishTime
-                            });
-                        }
-                    }
-                }
-            }
-
-            if (releaseBranches.length === 0) return null;
-
-            // Sort by version number (semver-aware), falling back to most recent deployment
-            releaseBranches.sort((a, b) => {
-                const versionA = a.branch.replace(/^.*\/release\//, '');
-                const versionB = b.branch.replace(/^.*\/release\//, '');
-                const partsA = versionA.split('.').map(Number);
-                const partsB = versionB.split('.').map(Number);
-
-                for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
-                    const numA = partsA[i] || 0;
-                    const numB = partsB[i] || 0;
-                    if (numA !== numB) return numB - numA; // Descending
-                }
-                // If versions are equal, prefer the most recent deployment
-                return new Date(b.finishTime) - new Date(a.finishTime);
-            });
-
-            // Return object with version string, build number, and build time
-            return {
-                version: releaseBranches[0].branch.replace(/^.*\/release\//, ''),
-                buildNumber: releaseBranches[0].buildNumber || null,
-                buildStartTime: releaseBranches[0].buildStartTime || null
-            };
-        }
-
         async function loadRcVersions() {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/EnvironmentReport/rc-versions`);
@@ -2812,84 +2782,6 @@
                 document.getElementById('totalCount').textContent = data.totalCount;
                 document.getElementById('lastUpdated').textContent = `Updated: ${formatDate(new Date())}`;
 
-                // Find and display the latest release branch version, build number and age
-                const releaseContainer = document.getElementById('latestReleaseContainer');
-                const isSpecificRc = rcVersionFilter && rcVersionFilter !== 'rc' && rcVersionFilter !== 'notrc';
-
-                latestRcBuild = null;
-
-                if (isSpecificRc) {
-                    // Fetch the true latest build for this branch directly — not affected by deployed versions
-                    try {
-                        const branchBuildResp = await fetch(`${API_BASE_URL}/api/EnvironmentReport/latest-branch-build?branch=${encodeURIComponent(rcVersionFilter)}`);
-                        if (branchBuildResp.ok) {
-                            const branchBuild = await branchBuildResp.json();
-                            latestRcBuild = branchBuild;
-                            document.getElementById('latestReleaseVersion').textContent = rcVersionFilter;
-                            const buildNumEl = document.getElementById('latestReleaseBuildNumber');
-                            if (buildNumEl) buildNumEl.textContent = branchBuild.buildNumber || 'N/A';
-                            const buildAgeEl = document.getElementById('latestReleaseBuildAge');
-                            if (buildAgeEl) {
-                                if (branchBuild.buildStartTime) {
-                                    buildAgeEl.textContent = `Built ${timeAgo(branchBuild.buildStartTime)}`;
-                                    buildAgeEl.title = formatDate(branchBuild.buildStartTime);
-                                } else {
-                                    buildAgeEl.textContent = '';
-                                }
-                            }
-                            releaseContainer.classList.remove('hidden');
-                            releaseContainer.classList.add('flex');
-                        } else {
-                            releaseContainer.classList.add('hidden');
-                            releaseContainer.classList.remove('flex');
-                        }
-                    } catch (e) {
-                        console.warn('Could not fetch latest branch build:', e);
-                        releaseContainer.classList.add('hidden');
-                        releaseContainer.classList.remove('flex');
-                    }
-                } else {
-                    // Use rc-versions (scans all environments, not just current page) to find the true highest RC branch
-                    try {
-                        const rcVersionsResp = await fetch(`${API_BASE_URL}/api/EnvironmentReport/rc-versions`);
-                        if (rcVersionsResp.ok) {
-                            const rcVersions = await rcVersionsResp.json();
-                            const highestRcBranch = rcVersions && rcVersions[0];
-                            if (highestRcBranch) {
-                                document.getElementById('latestReleaseVersion').textContent = highestRcBranch;
-                                const branchBuildResp = await fetch(`${API_BASE_URL}/api/EnvironmentReport/latest-branch-build?branch=${encodeURIComponent(highestRcBranch)}`);
-                                if (branchBuildResp.ok) {
-                                    const branchBuild = await branchBuildResp.json();
-                                    latestRcBuild = branchBuild;
-                                    const buildNumEl = document.getElementById('latestReleaseBuildNumber');
-                                    if (buildNumEl) buildNumEl.textContent = branchBuild.buildNumber || 'N/A';
-                                    const buildAgeEl = document.getElementById('latestReleaseBuildAge');
-                                    if (buildAgeEl) {
-                                        if (branchBuild.buildStartTime) {
-                                            buildAgeEl.textContent = `Built ${timeAgo(branchBuild.buildStartTime)}`;
-                                            buildAgeEl.title = formatDate(branchBuild.buildStartTime);
-                                        } else {
-                                            buildAgeEl.textContent = '';
-                                        }
-                                    }
-                                }
-                                releaseContainer.classList.remove('hidden');
-                                releaseContainer.classList.add('flex');
-                            } else {
-                                releaseContainer.classList.add('hidden');
-                                releaseContainer.classList.remove('flex');
-                            }
-                        } else {
-                            releaseContainer.classList.add('hidden');
-                            releaseContainer.classList.remove('flex');
-                        }
-                    } catch (e) {
-                        console.warn('Could not fetch RC versions:', e);
-                        releaseContainer.classList.add('hidden');
-                        releaseContainer.classList.remove('flex');
-                    }
-                }
-
                 totalPages = data.totalPages;
 
                 if (data.data && data.data.length > 0) {
@@ -2940,9 +2832,55 @@
             }
         }
 
+        async function loadLatestDeploymentBuilds() {
+            try {
+                const resp = await fetch(`${API_BASE_URL}/api/Pipeline/latest-deployment-builds`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                latestDeploymentBuilds = data;
+
+                function populateBuildCard(build, numElId, ageElId, ageSepElId, buildColor) {
+                    const numEl = document.getElementById(numElId);
+                    const ageEl = document.getElementById(ageElId);
+                    const sepEl = document.getElementById(ageSepElId);
+                    if (!build) {
+                        if (numEl) numEl.textContent = 'Not configured';
+                        if (ageEl) ageEl.textContent = '';
+                        if (sepEl) sepEl.textContent = '';
+                        return;
+                    }
+                    if (numEl) {
+                        if (build.buildId) {
+                            numEl.innerHTML = `<a href="https://dev.azure.com/${escapeHtml(ORGANIZATION_NAME)}/${escapeHtml(PROJECT_NAME)}/_build/results?buildId=${build.buildId}&view=results"
+                                target="_blank" rel="noopener noreferrer"
+                                class="hover:underline font-mono text-sm ${buildColor} flex items-center gap-1">
+                                ${escapeHtml(build.buildNumber || 'N/A')}
+                                <i class="fas fa-external-link-alt text-xs"></i>
+                            </a>`;
+                        } else {
+                            numEl.textContent = build.buildNumber || 'N/A';
+                        }
+                    }
+                    if (ageEl && build.buildStartTime) {
+                        ageEl.textContent = `Built ${timeAgo(build.buildStartTime)}`;
+                        ageEl.title = formatDate(build.buildStartTime);
+                    } else if (ageEl) {
+                        ageEl.textContent = '';
+                        if (sepEl) sepEl.textContent = '';
+                    }
+                }
+
+                populateBuildCard(data.quote, 'quoteLatestBuildNumber', 'quoteLatestBuildAge', 'quoteLatestBuildAgeSep', 'text-purple-600');
+                populateBuildCard(data.originate, 'originateLatestBuildNumber', 'originateLatestBuildAge', 'originateLatestBuildAgeSep', 'text-orange-600');
+            } catch (e) {
+                console.warn('Could not fetch latest deployment builds:', e);
+            }
+        }
+
         // Load on page load
         window.addEventListener('DOMContentLoaded', () => {
             loadRcVersions();
+            loadLatestDeploymentBuilds();
             loadDeployments();
 
             // Apply filter on Enter key in environment name input
