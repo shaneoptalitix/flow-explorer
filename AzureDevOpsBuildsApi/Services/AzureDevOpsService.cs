@@ -164,7 +164,8 @@ public class AzureDevOpsService : IAzureDevOpsService
         bool includeVariableGroups = true,
         string sortBy = "deploymentFinishTime",
         string sortOrder = "desc",
-        string? releaseCandidateFilter = null)
+        string? releaseCandidateFilter = null,
+        string? pipelineTypeFilter = null)
     {
         var reports = new List<EnvironmentReport>();
 
@@ -269,13 +270,20 @@ public class AzureDevOpsService : IAzureDevOpsService
                     var normalizedBranch = NormalizeBranchName(report.BuildSourceBranch);
                     bool isRc = normalizedBranch?.Contains("/release/", StringComparison.OrdinalIgnoreCase) == true
                              || normalizedBranch?.StartsWith("release/", StringComparison.OrdinalIgnoreCase) == true;
+                    bool isHotfix = normalizedBranch?.Contains("/hotfix/", StringComparison.OrdinalIgnoreCase) == true
+                                 || normalizedBranch?.StartsWith("hotfix/", StringComparison.OrdinalIgnoreCase) == true;
 
                     if (releaseCandidateFilter == "rc" && !isRc) continue;
-                    if (releaseCandidateFilter == "notrc" && isRc) continue;
+                    if (releaseCandidateFilter == "notrc" && (isRc || isHotfix)) continue;
+                    if (releaseCandidateFilter == "hotfix" && !isHotfix) continue;
                     if (!string.IsNullOrEmpty(releaseCandidateFilter)
                         && releaseCandidateFilter != "rc"
                         && releaseCandidateFilter != "notrc"
+                        && releaseCandidateFilter != "hotfix"
                         && !normalizedBranch?.Equals(releaseCandidateFilter, StringComparison.OrdinalIgnoreCase) == true) continue;
+
+                    if (pipelineTypeFilter == "quote" && report.DeploymentRecordDefinitionId != _config.QuoteDefinitionId) continue;
+                    if (pipelineTypeFilter == "originate" && report.DeploymentRecordDefinitionId != _config.OriginateDefinitionId) continue;
 
                     reports.Add(report);
                 }

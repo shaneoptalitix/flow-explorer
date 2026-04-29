@@ -46,7 +46,8 @@ public class EnvironmentReportController : ControllerBase
         [FromQuery] bool includeVariableGroups = true,
         [FromQuery] string sortBy = "deploymentFinishTime",
         [FromQuery] string sortOrder = "desc",
-        [FromQuery] string? releaseCandidate = null)
+        [FromQuery] string? releaseCandidate = null,
+        [FromQuery] string? pipelineType = null)
     {
         try
         {
@@ -81,7 +82,7 @@ public class EnvironmentReportController : ControllerBase
                 environmentName, result, pageNumber, pageSize, includeVariableGroups, sortBy, sortOrder);
 
             var response = await _azureDevOpsService.GetEnvironmentReportsAsync(
-                environmentName, null, result, pageNumber, pageSize, includeVariableGroups, sortBy, sortOrder, releaseCandidate);
+                environmentName, null, result, pageNumber, pageSize, includeVariableGroups, sortBy, sortOrder, releaseCandidate, pipelineType);
 
             _logger.LogInformation(
                 "Successfully retrieved {Count} environment reports (Page {PageNumber}/{TotalPages})", 

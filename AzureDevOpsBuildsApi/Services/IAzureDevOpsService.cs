@@ -13,7 +13,8 @@ public interface IAzureDevOpsService
         bool includeVariableGroups = true,
         string sortBy = "deploymentFinishTime",
         string sortOrder = "desc",
-        string? releaseCandidateFilter = null);
+        string? releaseCandidateFilter = null,
+        string? pipelineTypeFilter = null);
 
     Task<List<string>> GetRcVersionsAsync();
 
