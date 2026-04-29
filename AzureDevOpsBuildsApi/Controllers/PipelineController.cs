@@ -26,11 +26,11 @@ public class PipelineController : ControllerBase
     [HttpGet("latest-deployment-builds")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult> GetLatestDeploymentBuilds()
+    public async Task<ActionResult> GetLatestDeploymentBuilds([FromQuery] string? branch = null)
     {
         try
         {
-            var builds = await _azureDevOpsService.GetLatestDeploymentBuildsAsync();
+            var builds = await _azureDevOpsService.GetLatestDeploymentBuildsAsync(branch);
 
             static object? BuildDto(Build? b, int defId) => b == null ? null : new
             {

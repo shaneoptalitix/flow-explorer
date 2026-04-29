@@ -607,14 +607,14 @@ public class AzureDevOpsService : IAzureDevOpsService
         });
     }
 
-    public async Task<DeploymentTypeBuilds> GetLatestDeploymentBuildsAsync()
+    public async Task<DeploymentTypeBuilds> GetLatestDeploymentBuildsAsync(string? branch = null)
     {
         var quoteTask = _config.QuoteDefinitionId > 0
-            ? GetLatestBuildForDefinitionAsync(_config.QuoteDefinitionId)
+            ? GetLatestBuildForDefinitionAsync(_config.QuoteDefinitionId, branch)
             : Task.FromResult<Build?>(null);
 
         var originateTask = _config.OriginateDefinitionId > 0
-            ? GetLatestBuildForDefinitionAsync(_config.OriginateDefinitionId)
+            ? GetLatestBuildForDefinitionAsync(_config.OriginateDefinitionId, branch)
             : Task.FromResult<Build?>(null);
 
         await Task.WhenAll(quoteTask, originateTask);
@@ -628,9 +628,15 @@ public class AzureDevOpsService : IAzureDevOpsService
         };
     }
 
-    private async Task<Build?> GetLatestBuildForDefinitionAsync(int definitionId)
+    private async Task<Build?> GetLatestBuildForDefinitionAsync(int definitionId, string? branch = null)
     {
-        var cacheKey = $"latest_def_build_{definitionId}";
+        var normalizedBranch = string.IsNullOrWhiteSpace(branch)
+            ? null
+            : branch.StartsWith("refs/heads/", StringComparison.OrdinalIgnoreCase)
+                ? branch
+                : $"refs/heads/{branch}";
+
+        var cacheKey = $"latest_def_build_{definitionId}_{normalizedBranch ?? "release"}";
 
         return await _cache.GetOrCreateAsync(cacheKey, async entry =>
         {
@@ -639,10 +645,29 @@ public class AzureDevOpsService : IAzureDevOpsService
 
             try
             {
-                var url = $"_apis/build/builds?definitions={definitionId}&top=1&queryOrder=startTimeDescending&api-version={_config.ApiVersion}";
-                var response = await _httpClient.GetStringAsync(url);
-                var buildsResponse = JsonSerializer.Deserialize<BuildsResponse>(response);
-                return buildsResponse?.Value?.FirstOrDefault();
+                string url;
+                IEnumerable<Build> builds;
+
+                if (normalizedBranch != null)
+                {
+                    url = $"_apis/build/builds?definitions={definitionId}&branchName={Uri.EscapeDataString(normalizedBranch)}&top=50&queryOrder=startTimeDescending&api-version={_config.ApiVersion}";
+                    var response = await _httpClient.GetStringAsync(url);
+                    builds = JsonSerializer.Deserialize<BuildsResponse>(response)?.Value ?? new List<Build>();
+                }
+                else
+                {
+                    // No specific branch: fetch recent builds and filter to release branches
+                    url = $"_apis/build/builds?definitions={definitionId}&top=100&queryOrder=startTimeDescending&api-version={_config.ApiVersion}";
+                    var response = await _httpClient.GetStringAsync(url);
+                    builds = (JsonSerializer.Deserialize<BuildsResponse>(response)?.Value ?? new List<Build>())
+                        .Where(b => b.SourceBranch.Contains("/release/", StringComparison.OrdinalIgnoreCase));
+                }
+
+                // Only include builds with a proper version number (e.g. 3.1.0.3654), not date-stamped ones (e.g. 20260408.8)
+                return builds
+                    .Where(b => System.Text.RegularExpressions.Regex.IsMatch(b.BuildNumber, @"^\d+\.\d+\.\d+\.\d+$"))
+                    .OrderByDescending(b => Version.TryParse(b.BuildNumber, out var v) ? v : new Version(0, 0))
+                    .FirstOrDefault();
             }
             catch (Exception ex)
             {
