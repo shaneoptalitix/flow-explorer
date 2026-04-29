@@ -666,6 +666,7 @@ public class AzureDevOpsService : IAzureDevOpsService
                 // Only include builds with a proper version number (e.g. 3.1.0.3654), not date-stamped ones (e.g. 20260408.8)
                 return builds
                     .Where(b => System.Text.RegularExpressions.Regex.IsMatch(b.BuildNumber, @"^\d+\.\d+\.\d+\.\d+$"))
+                    .Where(b => !string.Equals(b.Result, "failed", StringComparison.OrdinalIgnoreCase))
                     .OrderByDescending(b => Version.TryParse(b.BuildNumber, out var v) ? v : new Version(0, 0))
                     .FirstOrDefault();
             }

@@ -410,11 +410,13 @@
                         <i class="fas fa-hammer text-purple-600 text-2xl"></i>
                     </div>
                     <div>
-                        <p class="text-sm text-gray-600">Latest Quote Build</p>
+                        <p class="text-sm text-gray-600">Latest Quote RC</p>
                         <div class="flex items-center gap-2">
                             <span class="text-sm font-mono text-purple-600" id="quoteLatestBuildNumber">-</span>
                             <span class="text-xs text-gray-400" id="quoteLatestBuildAgeSep">|</span>
                             <span class="text-xs text-gray-500 cursor-help" id="quoteLatestBuildAge"></span>
+                            <span class="text-xs text-gray-400 hidden" id="quoteLatestBuildResultSep">|</span>
+                            <span class="text-xs font-medium" id="quoteLatestBuildResult"></span>
                         </div>
                     </div>
                 </div>
@@ -423,11 +425,13 @@
                         <i class="fas fa-rocket text-orange-600 text-2xl"></i>
                     </div>
                     <div>
-                        <p class="text-sm text-gray-600">Latest Originate Build</p>
+                        <p class="text-sm text-gray-600">Latest Originate RC</p>
                         <div class="flex items-center gap-2">
                             <span class="text-sm font-mono text-orange-600" id="originateLatestBuildNumber">-</span>
                             <span class="text-xs text-gray-400" id="originateLatestBuildAgeSep">|</span>
                             <span class="text-xs text-gray-500 cursor-help" id="originateLatestBuildAge"></span>
+                            <span class="text-xs text-gray-400 hidden" id="originateLatestBuildResultSep">|</span>
+                            <span class="text-xs font-medium" id="originateLatestBuildResult"></span>
                         </div>
                     </div>
                 </div>
@@ -2844,14 +2848,22 @@
                 const data = await resp.json();
                 latestDeploymentBuilds = data;
 
-                function populateBuildCard(build, numElId, ageElId, ageSepElId, buildColor) {
+                function getBuildResultBadge(status, result) {
+                    return '';
+                }
+
+                function populateBuildCard(build, numElId, ageElId, ageSepElId, resultElId, resultSepElId, buildColor) {
                     const numEl = document.getElementById(numElId);
                     const ageEl = document.getElementById(ageElId);
                     const sepEl = document.getElementById(ageSepElId);
+                    const resultEl = document.getElementById(resultElId);
+                    const resultSepEl = document.getElementById(resultSepElId);
                     if (!build) {
                         if (numEl) numEl.textContent = 'Not configured';
                         if (ageEl) ageEl.textContent = '';
                         if (sepEl) sepEl.textContent = '';
+                        if (resultEl) resultEl.innerHTML = '';
+                        if (resultSepEl) resultSepEl.classList.add('hidden');
                         return;
                     }
                     if (numEl) {
@@ -2873,10 +2885,15 @@
                         ageEl.textContent = '';
                         if (sepEl) sepEl.textContent = '';
                     }
+                    if (resultEl) {
+                        const badge = getBuildResultBadge(build.status, build.result);
+                        resultEl.innerHTML = badge;
+                        if (resultSepEl) resultSepEl.classList.toggle('hidden', !badge);
+                    }
                 }
 
-                populateBuildCard(data.quote, 'quoteLatestBuildNumber', 'quoteLatestBuildAge', 'quoteLatestBuildAgeSep', 'text-purple-600');
-                populateBuildCard(data.originate, 'originateLatestBuildNumber', 'originateLatestBuildAge', 'originateLatestBuildAgeSep', 'text-orange-600');
+                populateBuildCard(data.quote, 'quoteLatestBuildNumber', 'quoteLatestBuildAge', 'quoteLatestBuildAgeSep', 'quoteLatestBuildResult', 'quoteLatestBuildResultSep', 'text-purple-600');
+                populateBuildCard(data.originate, 'originateLatestBuildNumber', 'originateLatestBuildAge', 'originateLatestBuildAgeSep', 'originateLatestBuildResult', 'originateLatestBuildResultSep', 'text-orange-600');
             } catch (e) {
                 console.warn('Could not fetch latest deployment builds:', e);
             }
