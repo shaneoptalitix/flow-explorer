@@ -759,7 +759,7 @@
             const fromLabel = comparisonMetadata.fromCommit ? comparisonMetadata.fromCommit.substring(0, 7) : 'unknown';
             const toLabel = comparisonMetadata.toCommit ? comparisonMetadata.toCommit.substring(0, 7) : 'unknown';
             const timestamp = new Date().toISOString().slice(0, 10);
-            const filename = `commits_${fromLabel}_to_${toLabel}_${timestamp}.csv`;
+            const filename = `commits_${fromLabel}_to_${toLabel}_${timestamp}.csv`.replace(/[^a-zA-Z0-9_\-.]/g, '_');
 
             // Create and trigger download
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
