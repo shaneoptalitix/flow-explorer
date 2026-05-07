@@ -7,6 +7,7 @@
     <link rel="icon" type="image/png" href="img/favicon.png">
     <link rel="icon" type="image/x-icon" href="img/favicon.png">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         .accordion-content {
@@ -980,7 +981,7 @@
                     downloadCsvBtn.classList.remove('hidden');
 
                     // Display all commits initially
-                    resultsContainer.innerHTML = allComparisonCommits.map(commit => createCommitItem(commit)).join('');
+                    resultsContainer.innerHTML = DOMPurify.sanitize(allComparisonCommits.map(commit => createCommitItem(commit)).join(''));
                     document.getElementById('comparisonCommitsInfo').textContent =
                         `Found ${data.totalCommits} commit${data.totalCommits !== 1 ? 's' : ''} between these releases`;
 
@@ -1757,7 +1758,7 @@
 
             if (!searchTerm) {
                 // Show all commits
-                resultsContainer.innerHTML = allComparisonCommits.map(commit => createCommitItem(commit)).join('');
+                resultsContainer.innerHTML = DOMPurify.sanitize(allComparisonCommits.map(commit => createCommitItem(commit)).join(''));
                 resultsContainer.classList.remove('hidden');
                 noResultsDiv.classList.add('hidden');
                 searchStats.classList.add('hidden');
@@ -1779,7 +1780,7 @@
             });
 
             if (filteredCommits.length > 0) {
-                resultsContainer.innerHTML = filteredCommits.map(commit => createCommitItem(commit, searchTerm)).join('');
+                resultsContainer.innerHTML = DOMPurify.sanitize(filteredCommits.map(commit => createCommitItem(commit, searchTerm)).join(''));
                 resultsContainer.classList.remove('hidden');
                 noResultsDiv.classList.add('hidden');
 
@@ -1921,7 +1922,7 @@
                 nextPageUrl = data.nextPageUrl;
                 currentCommitsPage++;
 
-                commitsContainer.innerHTML = allCommits.map(commit => createCommitItem(commit)).join('');
+                commitsContainer.innerHTML = DOMPurify.sanitize(allCommits.map(commit => createCommitItem(commit)).join(''));
                 commitsInfo.textContent = `Showing ${allCommits.length} commits`;
 
                 if (hasMoreCommits) {
@@ -2049,7 +2050,7 @@
 
                 if (branchesCache[definitionId]) {
                     const branches = branchesCache[definitionId];
-                    branchesContent.innerHTML = createBranchesHTML(branches, environmentId);
+                    branchesContent.innerHTML = DOMPurify.sanitize(createBranchesHTML(branches, environmentId));
                     if (branches && branches.length > 0) {
                         branchesCount.textContent = `(${branches.length})`;
                     }
@@ -2062,7 +2063,7 @@
                     try {
                         const branches = await loadBranches(definitionId);
                         branchesCache[definitionId] = branches;
-                        branchesContent.innerHTML = createBranchesHTML(branches, environmentId);
+                        branchesContent.innerHTML = DOMPurify.sanitize(createBranchesHTML(branches, environmentId));
                         if (branches && branches.length > 0) {
                             branchesCount.textContent = `(${branches.length})`;
                         }
