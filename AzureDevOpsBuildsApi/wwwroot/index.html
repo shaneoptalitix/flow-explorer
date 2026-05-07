@@ -2117,8 +2117,9 @@
 
         // Create branch item
         function createBranchItem(branch, environmentId) {
-            const buildNumberHtml = branch.latestBuildId && branch.latestBuildNumber
-                ? `<a href="https://dev.azure.com/${escapeHtml(ORGANIZATION_NAME)}/${escapeHtml(PROJECT_NAME)}/_build/results?buildId=${branch.latestBuildId}&view=results"
+            const safeBuildId = parseInt(branch.latestBuildId, 10) || 0;
+            const buildNumberHtml = safeBuildId && branch.latestBuildNumber
+                ? `<a href="https://dev.azure.com/${escapeHtml(ORGANIZATION_NAME)}/${escapeHtml(PROJECT_NAME)}/_build/results?buildId=${safeBuildId}&view=results"
                         target="_blank" rel="noopener noreferrer"
                         class="text-blue-600 hover:text-blue-800 font-mono text-sm flex items-center no-select-propagation">
                         ${escapeHtml(branch.latestBuildNumber)}
@@ -2128,7 +2129,7 @@
 
             let sourceVersionHtml;
             if (branch.latestBuildSourceVersion) {
-                const copyButtonId = `copy-branch-${branch.latestBuildId}`;
+                const copyButtonId = `copy-branch-${safeBuildId}`;
                 sourceVersionHtml = `
                         <div class="flex items-center gap-2">
                             <a href="https://bitbucket.org/Optalitix/optalitix.framework/commits/${escapeHtml(branch.latestBuildSourceVersion)}"
@@ -2137,7 +2138,7 @@
                                 ${escapeHtml(branch.latestBuildSourceVersion.substring(0, 7))}
                                 <i class="fas fa-external-link-alt ml-2 text-xs"></i>
                             </a>
-                            <button id="${copyButtonId}" onclick="copyToClipboard('${escapeHtml(branch.latestBuildSourceVersion)}', '${copyButtonId}')"
+                            <button id="${copyButtonId}" onclick="copyToClipboard('${escapeHtml(branch.latestBuildSourceVersion)}', 'copy-branch-${safeBuildId}')"
                                     class="text-gray-500 hover:text-gray-700 transition-colors no-select-propagation" title="Copy full version">
                                 <i class="fas fa-copy text-xs"></i>
                             </button>
@@ -2147,13 +2148,13 @@
             }
 
             return `
-                    <div id="build-branch-${branch.latestBuildId}"
+                    <div id="build-branch-${safeBuildId}"
                          class="build-block"
                          data-environment-id="${environmentId}"
-                         data-build-id="${branch.latestBuildId}"
-                         data-source-version="${branch.latestBuildSourceVersion}"
-                         data-build-number="${branch.latestBuildNumber}"
-                         data-branch="${branch.branchName}">
+                         data-build-id="${safeBuildId}"
+                         data-source-version="${escapeHtml(branch.latestBuildSourceVersion || '')}"
+                         data-build-number="${escapeHtml(branch.latestBuildNumber || '')}"
+                         data-branch="${escapeHtml(branch.branchName || '')}">
                         <div class="bg-gray-50 rounded-lg p-4 border-2 border-gray-200 hover:shadow-md transition-all">
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                                 <div>
@@ -2883,7 +2884,8 @@
                     }
                     if (numEl) {
                         if (build.buildId) {
-                            numEl.innerHTML = `<a href="https://dev.azure.com/${escapeHtml(ORGANIZATION_NAME)}/${escapeHtml(PROJECT_NAME)}/_build/results?buildId=${build.buildId}&view=results"
+                            const safeBuildId = parseInt(build.buildId, 10) || 0;
+                            numEl.innerHTML = `<a href="https://dev.azure.com/${escapeHtml(ORGANIZATION_NAME)}/${escapeHtml(PROJECT_NAME)}/_build/results?buildId=${safeBuildId}&view=results"
                                 target="_blank" rel="noopener noreferrer"
                                 class="hover:underline font-mono text-sm ${buildColor} flex items-center gap-1">
                                 ${escapeHtml(build.buildNumber || 'N/A')}
